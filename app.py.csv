@@ -1,0 +1,60 @@
+import streamlit as st
+import pandas as pd
+from streamlit_gsheets import GSheetsConnection
+
+# ページ設定：ブラウザのタブ名と横幅いっぱいに使う設定
+"st.set_page_config(page_title=""店舗KPIダッシュボード"", layout=""wide"")"
+"st.title(""?? 店舗KPIダッシュボード (スプレッドシート連携)"")"
+
+# -------------------------------------------------------
+# 設定：スプレッドシートのURL
+# -------------------------------------------------------
+# ※スプレッドシートの「共有」設定で「リンクを知っている全員が閲覧可」にしてください
+"SPREADSHEET_URL = ""https://docs.google.com/spreadsheets/d/1iwGSIWU8aEoW82hzZCI6YO8VufhAc3zR8KnS4OPPMQA/edit#gid=244052959"""
+
+# -------------------------------------------------------
+# データ読み込み関数（キャッシュを使用して動作を軽くします）
+# -------------------------------------------------------
+@st.cache_data(ttl=300)  # 5分間（300秒）データを保存し、何度も読みに行くのを防ぎます
+def load_all_sheets():
+"    conn = st.connection(""gsheets"", type=GSheetsConnection)"
+    
+    # 指示に基づいた5つのシートを読み込み
+    data = {
+"        ""carte"":    conn.read(spreadsheet=SPREADSHEET_URL, worksheet=""ストアカルテ""),"
+"        ""master"":   conn.read(spreadsheet=SPREADSHEET_URL, worksheet=""店舗データ""),"
+"        ""kpi_2026_dtl"": conn.read(spreadsheet=SPREADSHEET_URL, worksheet=""202603kpi""),"
+"        ""kpi_2026"":     conn.read(spreadsheet=SPREADSHEET_URL, worksheet=""202603""),"
+"        ""kpi_2025"":     conn.read(spreadsheet=SPREADSHEET_URL, worksheet=""202503""),"
+    }
+    return data
+
+# -------------------------------------------------------
+# メイン処理
+# -------------------------------------------------------
+try:
+    all_sheets = load_all_sheets()
+
+    # --- サイドバー：店舗を選択するメニュー ---
+"    st.sidebar.header(""表示設定"")"
+"    if ""店舗名"" in all_sheets[""master""].columns:"
+"        store_list = all_sheets[""master""][""店舗名""].dropna().unique()"
+"        selected_store = st.sidebar.selectbox(""表示する店舗を選択してください"", store_list)"
+    else:
+"        st.error(""「店舗データ」シートに『店舗名』という列が見つかりません。"")"
+        st.stop()
+
+    # --- データの抽出 ---
+    # 選択された店舗のデータだけを抜き出す
+"    carte_row = all_sheets[""carte""][all_sheets[""carte""][""店舗名""] == selected_store]"
+"    kpi_26 = all_sheets[""kpi_2026""][all_sheets[""kpi_2026""][""店舗名""] == selected_store]"
+"    kpi_25 = all_sheets[""kpi_2025""][all_sheets[""kpi_2025""][""店舗名""] == selected_store]"
+"    kpi_dtl = all_sheets[""kpi_2026_dtl""][all_sheets[""kpi_2026_dtl""][""店舗名""] == selected_store]"
+
+    # --- 表示エリア1：売上サマリー (2026 vs 2025) ---
+"    st.subheader(f""?? {selected_store}：売上状況"")"
+"    c1, c2, c3, c4 = st.columns(4)"
+    
+    # ※列名はスプレッドシートの実際の項目名に合わせて自動調整されます
+"    val_26 = kpi_26[""売上""].sum() if ""売上"" in kpi_26.columns else 0"
+"    val_25 = kpi_25[""売上""].sum() if ""売上"" in kpi_25.columns else 0"
