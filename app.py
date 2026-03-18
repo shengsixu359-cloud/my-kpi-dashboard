@@ -7,7 +7,7 @@ st.set_page_config(page_title="店舗KPIダッシュボード", layout="wide")
 st.title("📊 店舗KPIダッシュボード")
 
 # スプレッドシートのURL
-SPREADSHEET_URL = "(https://docs.google.com/spreadsheets/d/1iwGSIWU8aEoW82hzZCI6YO8VufhAc3zR8KnS4OPPMQA/edit?gid=0#gid=0)"
+SPREADSHEET_URL = "(https://docs.google.com/spreadsheets/d/1iwGSIWU8aEoW82hzZCI6YO8VufhAc3zR8KnS4OPPMQA/edit?usp=sharing)"
 
 @st.cache_data(ttl=300)
 def load_all_sheets():
