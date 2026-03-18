@@ -19,8 +19,8 @@ def load_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
     # シート名を直接文字列で指定（変数を使わない）
     return {
-        "carte":  conn.read(spreadsheet=URL, worksheet="ストアカルテ"),
-        "master": conn.read(spreadsheet=URL, worksheet="店舗データ"),
+        "carte":  conn.read(spreadsheet=URL, worksheet="karute"),
+        "master": conn.read(spreadsheet=URL, worksheet="data"),
         "kpi_d":  conn.read(spreadsheet=URL, worksheet="202603kpi"),
         "kpi_26": conn.read(spreadsheet=URL, worksheet="202603"),
         "kpi_25": conn.read(spreadsheet=URL, worksheet="202503"),
