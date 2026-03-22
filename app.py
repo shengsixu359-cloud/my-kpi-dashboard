@@ -5,7 +5,7 @@ import pandas as pd
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# メイリオフォントと条件付き書式、テーブルデザインの適用
+# メイリオフォントと条件付き書式の適用
 st.markdown("""
     <style>
     html, body, [class*="css"] {
@@ -13,7 +13,8 @@ st.markdown("""
     }
     .reach { color: #1f77b4; font-weight: bold; } /* 達成: ブルー + 太字 */
     .unmet { color: #d62728; } /* 未達: 赤字 */
-    th { background-color: #444 !important; color: white !important; } /* 表の見出しを黒っぽく */
+    th { background-color: #444 !important; color: white !important; padding: 10px; }
+    td { border: 1px solid #ddd; padding: 8px; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -47,18 +48,24 @@ def col_to_num(col_str):
         num = num * 26 + (ord(c) - ord('A') + 1)
     return num
 
-# 評価記号の判定
 def get_eval_mark(ratio):
     if ratio >= 100: return "◯"
     elif ratio >= 90: return "△"
     else: return "✕"
 
-# 数値の書式設定（HTML）
 def format_ratio_html(ratio):
     if ratio >= 100:
         return f'<span class="reach">{ratio:.1f}%</span>'
     else:
         return f'<span class="unmet">{ratio:.1f}%</span>'
+
+# 数値を適切な形式（カンマor小数点）に整える関数
+def num_fmt(val, unit=""):
+    if pd.isna(val) or val == 0: return "-"
+    if val >= 100:
+        return f"{unit}{val:,.0f}"
+    else:
+        return f"{unit}{val:.2f}"
 
 # --- メイン処理 ---
 df_raw = load_raw_data()
@@ -72,45 +79,45 @@ if not df_raw.empty:
     selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_week_label]
 
-    # --- 受注実績セクション（表形式に変更） ---
+    # --- 受注実績セクション ---
     st.markdown("#### 受注実績")
     
-    act_s = get_score(df_raw, row_idx, col_to_num("F")) # 受注実績
-    tgt_s = get_score(df_raw, row_idx, col_to_num("G")) # 目標
-    ratio_s = get_score(df_raw, row_idx, col_to_num("I")) # 目標比
-    diff_s = get_score(df_raw, row_idx, col_to_num("H")) # 差額
-    ly_s = get_score(df_raw, row_idx, col_to_num("M")) # LY(前年実績)
-    ly_r = get_score(df_raw, row_idx, col_to_num("N")) # LY比
-    ly_diff = act_s - ly_s # LY差額
+    act_s = get_score(df_raw, row_idx, col_to_num("F"))
+    tgt_s = get_score(df_raw, row_idx, col_to_num("G"))
+    ratio_s = get_score(df_raw, row_idx, col_to_num("I"))
+    diff_s = get_score(df_raw, row_idx, col_to_num("H"))
+    ly_s = get_score(df_raw, row_idx, col_to_num("M"))
+    ly_r = get_score(df_raw, row_idx, col_to_num("N"))
+    ly_diff = act_s - ly_s
 
     sales_table = f"""
-    <table style="width:100%; border-collapse: collapse; text-align: center; border: 1px solid #ddd;">
-        <tr style="background-color: #444; color: white;">
-            <th style="padding: 10px;">受注実績</th>
-            <th>目標</th>
-            <th>目標比</th>
-            <th>差額</th>
+    <table style="width:100%; border-collapse: collapse;">
+        <tr>
+            <th style="width: 25%;">受注実績</th>
+            <th style="width: 25%;">目標</th>
+            <th style="width: 25%;">目標比</th>
+            <th style="width: 25%;">差額</th>
         </tr>
         <tr>
-            <td rowspan="3" style="font-size: 1.2em; font-weight: bold; border: 1px solid #ddd;">¥{act_s:,.0f}</td>
-            <td style="border: 1px solid #ddd;">¥{tgt_s:,.0f}</td>
-            <td style="border: 1px solid #ddd;">{format_ratio_html(ratio_s)}</td>
-            <td style="border: 1px solid #ddd;">¥{diff_s:,.0f}</td>
+            <td rowspan="3" style="font-size: 1.5em; font-weight: bold;">¥{act_s:,.0f}</td>
+            <td>¥{tgt_s:,.0f}</td>
+            <td>{format_ratio_html(ratio_s)}</td>
+            <td>¥{diff_s:,.0f}</td>
         </tr>
-        <tr style="background-color: #444; color: white;">
+        <tr>
             <th>LY</th>
             <th>LY比</th>
             <th>差額</th>
         </tr>
         <tr>
-            <td style="border: 1px solid #ddd;">¥{ly_s:,.0f}</td>
-            <td style="border: 1px solid #ddd;">{format_ratio_html(ly_r)}</td>
-            <td style="border: 1px solid #ddd;">¥{ly_diff:,.0f}</td>
+            <td>¥{ly_s:,.0f}</td>
+            <td>{format_ratio_html(ly_r)}</td>
+            <td>¥{ly_diff:,.0f}</td>
         </tr>
     </table>
     """
     st.write(sales_table, unsafe_allow_html=True)
-    st.write("") # スペース用
+    st.write("")
 
     # --- KPI別セクション ---
     st.markdown("#### KPI別")
@@ -122,7 +129,7 @@ if not df_raw.empty:
         "客数":   {"act": "AT", "tgt": "AX", "ly": "BB"},
     }
 
-    kpi_rows = []
+    kpi_rows_html = ""
     for item, cols in kpi_cols.items():
         a = get_score(df_raw, row_idx, col_to_num(cols["act"]))
         t = get_score(df_raw, row_idx, col_to_num(cols["tgt"]))
@@ -132,30 +139,30 @@ if not df_raw.empty:
         lr = (a / ly * 100) if ly else 0
         
         unit = "¥" if item == "客単価" else ""
-        eval_mark = get_eval_mark(tr) # 評価記号
+        eval_mark = get_eval_mark(tr)
 
-        kpi_rows.append(f"""
+        kpi_rows_html += f"""
         <tr>
-            <td style="border: 1px solid #ddd; padding: 8px;">{eval_mark}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">{item}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">{unit}{t:,.0f if t > 100 else t:.2f}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">{unit}{a:,.0f if a > 100 else a:.2f}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">{format_ratio_html(tr)}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">{format_ratio_html(lr)}</td>
+            <td>{eval_mark}</td>
+            <td>{item}</td>
+            <td>{num_fmt(t, unit)}</td>
+            <td>{num_fmt(a, unit)}</td>
+            <td>{format_ratio_html(tr)}</td>
+            <td>{format_ratio_html(lr)}</td>
         </tr>
-        """)
+        """
 
     kpi_table_html = f"""
-    <table style="width:100%; border-collapse: collapse; text-align: center; border: 1px solid #ddd;">
-        <tr style="background-color: #444; color: white;">
-            <th style="width: 50px;">評</th>
+    <table style="width:100%; border-collapse: collapse;">
+        <tr>
+            <th style="width: 80px;">評</th>
             <th>KPI</th>
             <th>目標</th>
             <th>実績</th>
             <th>目標比</th>
             <th>LY比</th>
         </tr>
-        {"".join(kpi_rows)}
+        {kpi_rows_html}
     </table>
     """
     st.write(kpi_table_html, unsafe_allow_html=True)
