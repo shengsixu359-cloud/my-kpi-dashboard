@@ -25,6 +25,7 @@ def load_raw_data():
 def get_score(df, row_idx, col_idx):
     try:
         val = df.iloc[row_idx-1, col_idx-1]
+        if pd.isna(val): return 0
         clean_val = str(val).replace(',', '').replace('%', '').replace('¥', '').replace('円', '').strip()
         return pd.to_numeric(clean_val, errors='coerce')
     except:
@@ -37,6 +38,7 @@ def col_to_num(col_str):
     return num
 
 def format_ratio_text(ratio):
+    if pd.isna(ratio) or ratio == 0: return "-"
     return f'<span class="{"reach" if ratio >= 100 else "unmet"}">{ratio:.1f}%</span>'
 
 def diff_fmt(val):
@@ -54,25 +56,72 @@ if not df_raw.empty:
     selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_week_label]
 
-    # --- TOP: All Stores サマリー (ロジック修正) ---
-    # 月次受注額：F12(12,6)からF53(53,6)の合計
-    monthly_sales_sum = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
+    # --- TOP: All Stores サマリー (新ロジック) ---
+    # 月次受注額 (G2相当): F12:F53の合計
+    g2_actual = sum([get_score(df_raw, i, col_to_num("F")) for i in range(12, 54)])
     
-    # その他の項目：3行目の各列から取得 (G3, H3, I3...)
-    all_target = get_score(df_raw, 3, 7) # G3
-    all_diff   = get_score(df_raw, 3, 8) # H3
-    all_ratio  = get_score(df_raw, 3, 9) # I3
+    # 目標・予算・前年の月次ベース (3行目から取得)
+    g3_target = get_score(df_raw, 3, col_to_num("G")) # 月次目標
+    i3_budget = get_score(df_raw, 3, col_to_num("I")) # 月次予算
+    k3_ly_val = get_score(df_raw, 3, col_to_num("K")) # 前年受注額
     
-    # MTD関連：こちらも3行目の対応する列から取得 (仮定: J, K, L列など)
-    # キャプチャに合わせて、MTD目標=J3, MTD目標%=K3, MTD差額=L3 と仮定して取得します
-    mtd_target = get_score(df_raw, 3, 10) # J3
-    mtd_ratio  = get_score(df_raw, 3, 11) # K3
-    mtd_diff   = get_score(df_raw, 3, 12) # L3
+    # 比率計算 (IFERROR対応)
+    target_ratio = (g2_actual / g3_target * 100) if g3_target else 0
+    budget_ratio = (g2_actual / i3_budget * 100) if i3_budget else 0
+    ly_ratio     = (g2_actual / k3_ly_val * 100) if k3_ly_val else 0
+    
+    # MTD関連 (6行目から取得)
+    g6_mtd_target = get_score(df_raw, 6, col_to_num("G")) # MTD目標
+    i6_mtd_budget = get_score(df_raw, 6, col_to_num("I")) # MTD予算
+    k6_mtd_ly     = get_score(df_raw, 6, col_to_num("K")) # MTD前年
+    
+    # MTD比率と差額
+    mtd_target_ratio = (g2_actual / g6_mtd_target * 100) if g6_mtd_target else 0
+    mtd_budget_ratio = (g2_actual / i6_mtd_budget * 100) if i6_mtd_budget else 0
+    mtd_ly_ratio     = (g2_actual / k6_mtd_ly     * 100) if k6_mtd_ly     else 0
 
-    all_stores_html = f'<h4>All Stores ※FC excluded</h4><table class="all-stores-table"><tr><th style="width:15%;">月次受注額</th><td colspan="5" style="font-size:1.2em; font-weight:bold;">¥{monthly_sales_sum:,.0f}</td></tr><tr><th>月次目標</th><td>¥{all_target:,.0f}</td><th>月次予算</th><td>-</td><th>前年受注額</th><td>-</td></tr><tr><th>目標比</th><td>{format_ratio_text(all_ratio)}</td><th>予算比</th><td>-</td><th>前年比</th><td>-</td></tr><tr><th>差額</th><td>{diff_fmt(all_diff)}</td><th>差額</th><td>-</td><th>差額</th><td>-</td></tr><tr><th>MTD目標</th><td>¥{mtd_target:,.0f}</td><th>MTD予算</th><td>-</td><th>MTD前年</th><td>-</td></tr><tr><th>MTD目標 %</th><td>{format_ratio_text(mtd_ratio)}</td><th>MTD目標 差額</th><td>{diff_fmt(mtd_diff)}</td><th>-</th><td>-</td></tr></table>'
+    all_stores_html = f'''
+    <h4>All Stores ※FC excluded</h4>
+    <table class="all-stores-table">
+        <tr>
+            <th style="width:15%;">月次受注額</th>
+            <td colspan="5" style="font-size:1.2em; font-weight:bold;">{g2_actual:,.0f}</td>
+        </tr>
+        <tr>
+            <th>月次目標</th><td>{g3_target:,.0f}</td>
+            <th>月次予算</th><td>{i3_budget:,.0f}</td>
+            <th>前年受注額</th><td>{k3_ly_val:,.0f}</td>
+        </tr>
+        <tr>
+            <th>目標比</th><td>{format_ratio_text(target_ratio)}</td>
+            <th>予算比</th><td>{format_ratio_text(budget_ratio)}</td>
+            <th>前年比</th><td>{format_ratio_text(ly_ratio)}</td>
+        </tr>
+        <tr>
+            <th>差額</th><td>{diff_fmt(g2_actual - g3_target)}</td>
+            <th>差額</th><td>{diff_fmt(g2_actual - i3_budget)}</td>
+            <th>差額</th><td>{diff_fmt(g2_actual - k3_ly_val)}</td>
+        </tr>
+        <tr>
+            <th>MTD目標</th><td>{g6_mtd_target:,.0f}</td>
+            <th>MTD予算</th><td>{i6_mtd_budget:,.0f}</td>
+            <th>MTD前年</th><td>{k6_mtd_ly:,.0f}</td>
+        </tr>
+        <tr>
+            <th>MTD目標 %</th><td>{format_ratio_text(mtd_target_ratio)}</td>
+            <th>MTD予算 %</th><td>{format_ratio_text(mtd_budget_ratio)}</td>
+            <th>MTD前年 %</th><td>{format_ratio_text(mtd_ly_ratio)}</td>
+        </tr>
+        <tr>
+            <th>MTD目標 差額</th><td>{diff_fmt(g2_actual - g6_mtd_target)}</td>
+            <th>MTD予算 差額</th><td>{diff_fmt(g2_actual - i6_mtd_budget)}</td>
+            <th>MTD前年 差額</th><td>{diff_fmt(g2_actual - k6_mtd_ly)}</td>
+        </tr>
+    </table>
+    '''
     st.markdown(all_stores_html, unsafe_allow_html=True)
 
-    # --- 受注実績テーブル (W1~W6) ---
+    # --- 受注実績テーブル (週次) ---
     act_s = get_score(df_raw, row_idx, col_to_num("F"))
     tgt_s = get_score(df_raw, row_idx, col_to_num("G"))
     ratio_s = get_score(df_raw, row_idx, col_to_num("I"))
@@ -92,6 +141,5 @@ if not df_raw.empty:
         tr, lr = (a/t*100) if t else 0, (a/ly*100) if ly else 0
         rows_html += f'<tr><td><span class="eval-mark">{"◯" if tr>=100 else "△" if tr>=90 else "✕"}</span></td><td>{item}</td><td>{f"¥{t:,.0f}" if item=="客単価" else f"{t:,.0f}" if t>100 else f"{t:.2f}"}</td><td>{f"¥{a:,.0f}" if item=="客単価" else f"{a:,.0f}" if a>100 else f"{a:.2f}"}</td><td>{format_ratio_text(tr)}</td><td>{format_ratio_text(lr)}</td></tr>'
     st.markdown(f'<h4>KPI別</h4><table class="kpi-table"><tr><th style="width: 80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{rows_html}</table>', unsafe_allow_html=True)
-
 else:
     st.warning("データを読み込めませんでした。")
