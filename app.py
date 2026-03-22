@@ -25,11 +25,7 @@ SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
 
 @st.cache_data(ttl=30)
 def load_data_by_name(sheet_name):
-    """
-    シート名からデータを取得する最も強力な方法
-    """
     try:
-        # CSVとして全データを引っ張るURL
         url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         response = requests.get(url)
         if response.status_code == 200:
@@ -41,28 +37,22 @@ def load_data_by_name(sheet_name):
         return None, str(e)
 
 def get_val(df, row_idx, col_idx):
-    """
-    行列番号から数値を取得（エラー耐性強化）
-    """
     try:
         if row_idx is None or row_idx <= 0: return 0
         val = df.iloc[row_idx-1, col_idx-1]
         if pd.isna(val): return 0
-        # 不要な記号を徹底排除
         s = str(val).replace(',','').replace('%','').replace('¥','').replace('円','').replace(' ','').strip()
         return pd.to_numeric(s, errors='coerce') or 0
     except:
         return 0
 
 def find_row(df, keyword):
-    """
-    シートの全セルからキーワードを検索して行番号を特定する
-    """
     try:
-        for i, row in df.iterrows():
-            if keyword in str(row[0]): # A列を優先
+        # A列(index 0)を最優先で探す
+        for i, val in enumerate(df[0]):
+            if keyword in str(val):
                 return i + 1
-        # A列になければ全列探す
+        # A列になければ全セルを探す
         for i, row in df.iterrows():
             if any(keyword in str(cell) for cell in row):
                 return i + 1
@@ -78,26 +68,19 @@ target_sheet = f"{y_val[2:]}{m_val}"
 
 df_raw, err = load_data_by_name(target_sheet)
 
-if df_raw is None:
-    st.error(f"シート「{target_sheet}」が読み込めません。")
-    st.info("タブ名が数字4桁（例: 2503）か、共有設定が「リンクを知っている全員」か確認してください。")
-else:
-    # 行番号を自動特定（全月対応）
-    # WEEK行
+if df_raw is not None:
+    # 行番号を自動特定
     w_rows = {w: find_row(df_raw, w) or d for w, d in zip(["W1","W2","W3","W4","W5","W6"], [57,58,59,60,61,62])}
-    
     sel_w = st.sidebar.selectbox("表示週", list(w_rows.keys()))
     row_idx = w_rows[sel_w]
 
     st.title(f"ストアカルテ {y_val}年{m_val}月")
 
     # --- 1. All Stores ---
-    # 月次受注額はF12:F53の合計
     actual_sum = sum([get_val(df_raw, i, 6) for i in range(12, 54)])
     g3_t = get_val(df_raw, 3, 7)
     i3_b = get_val(df_raw, 3, 9)
     k3_l = get_val(df_raw, 3, 11)
-    g6_t, i6_b, k6_l = get_val(df_raw, 6, 7), get_val(df_raw, 6, 9), get_val(df_raw, 6, 11)
 
     all_html = f'''
     <table class="base-table">
@@ -137,9 +120,9 @@ else:
         u = "¥" if k=="客単価" else ""
         fmt_t = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         fmt_a = f"{u}{av:,.0f}" if av >= 100 else f"{u}{av:.2f}"
-        
         k_rows_html += f'<tr><td><b>{"◯" if tr>=100 else "△" if tr>=90 else "✕"}</b></td><td>{k}</td><td>{fmt_t}</td><td><span class="{"reach" if av>=tv else "unmet"}">{fmt_a}</span></td><td><span class="{"reach" if tr>=100 else "unmet"}">{tr:.1f}%</span></td><td><span class="{"reach" if lr>=100 else "unmet"}">{lr:.1f}%</span></td></tr>'
     st.markdown(f'<h4>KPI別</h4><table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows_html}</table>', unsafe_allow_html=True)
 
 else:
-    st.error("データを取得できませんでした。")
+    st.error(f"シート「{target_sheet}」を読み込めませんでした。")
+    st.info("タブ名が「2503」のような数字4桁であることを確認してください。")
