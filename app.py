@@ -40,24 +40,28 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 表示用ヘルパー関数群 ---
+# --- 表示用ヘルパー関数群 (ここで全ての整形を行う) ---
 
 def color_text(text, is_reached):
-    """テキストに色クラスを付けて返す"""
+    """色付きのスパンを返す"""
     cls = "reach" if is_reached else "unmet"
     return f'<span class="{cls}">{text}</span>'
 
-def fmt_num(val, is_reached, unit=""):
-    """数値をカンマ区切りにし、色を付ける（▲+は付けない）"""
-    if val >= 100 or val <= -100:
+def fmt_num(val, is_reached, unit="", is_bold=False):
+    """数値をカンマ区切りにし、色を付ける。▲や+は付けない"""
+    if abs(val) >= 100:
         txt = f"{unit}{abs(val):,.0f}"
     else:
         txt = f"{unit}{abs(val):.2f}"
+    
+    if is_bold:
+        txt = f"<b>{txt}</b>"
     return color_text(txt, is_reached)
 
 def fmt_ratio(val, is_reached):
-    """比率を%にし、色を付ける"""
-    return color_text(f"{val:.1f}%", is_reached)
+    """比率を%形式にして色を付ける"""
+    txt = f"{val:.1f}%"
+    return color_text(txt, is_reached)
 
 df_raw = load_raw_data()
 
@@ -95,11 +99,18 @@ if not df_raw.empty:
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
 
-    # --- 3. 受注実績詳細 ---
+    # --- 3. 受注実績詳細 (選択週) ---
     da, dt, dr = get_score(df_raw, row_idx, 6), get_score(df_raw, row_idx, 7), get_score(df_raw, row_idx, 9)
     dl, dlr = get_score(df_raw, row_idx, 13), get_score(df_raw, row_idx, 14)
     st.markdown(f"<h4>受注実績 {selected_label}</h4>", unsafe_allow_html=True)
-    st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:25%;">受注実績</th><th style="width:25%;">目標</th><th style="width:25%;">目標比</th><th style="width:25%;">差額</th></tr><tr><td rowspan="3" style="font-size:1.5em;font-weight:bold;">¥{da:,.0f}</td><td>¥{dt:,.0f}</td><td>{fmt_ratio(dr, dr>=100)}</td><td>{fmt_num(da-dt, da>=dt)}</td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{dl:,.0f}</td><td>{fmt_ratio(dlr, dlr>=100)}</td><td>{fmt_num(da-dl, da>=dl)}</td></tr></table>', unsafe_allow_html=True)
+    st.markdown(f'''
+    <table class="base-table kpi-table">
+        <tr><th style="width:25%;">受注実績</th><th style="width:25%;">目標</th><th style="width:25%;">目標比</th><th style="width:25%;">差額</th></tr>
+        <tr><td rowspan="3" style="font-size:1.5em;font-weight:bold;">¥{da:,.0f}</td><td>¥{dt:,.0f}</td><td>{fmt_ratio(dr, dr>=100)}</td><td>{fmt_num(da-dt, da>=dt)}</td></tr>
+        <tr><th>LY</th><th>LY比</th><th>差額</th></tr>
+        <tr><td>¥{dl:,.0f}</td><td>{fmt_ratio(dlr, dlr>=100)}</td><td>{fmt_num(da-dl, da>=dl)}</td></tr>
+    </table>
+    ''', unsafe_allow_html=True)
 
     # --- 4. KPI別 ---
     k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
@@ -111,7 +122,13 @@ if not df_raw.empty:
         lr = av/lv*100 if lv else 0
         u = "¥" if k=="客単価" else ""
         m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
-        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{tv:,.0f if tv>100 else tv:.2f}</td><td>{fmt_num(av, reached, u)}</td><td>{fmt_ratio(tr, tr>=100)}</td><td>{fmt_ratio(lr, lr>=100)}</td></tr>'
+        
+        # 数値の整形を外で行う
+        fmt_target = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
+        fmt_actual = fmt_num(av, reached, u)
+        
+        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{fmt_target}</td><td>{fmt_actual}</td><td>{fmt_ratio(tr, tr>=100)}</td><td>{fmt_ratio(lr, lr>=100)}</td></tr>'
+    
     st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
