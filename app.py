@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
-import requests
 
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ・ダッシュボード", layout="wide")
@@ -22,23 +21,19 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 # 2. データ取得設定
-# スプレッドシートIDを固定
 SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
-BASE_EXPORT_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid="
-
-# シート名とGIDのマッピング（手動で主要なものを定義するか、自動取得も可能ですが、まずは確実なリストを定義します）
-# ※新しい月が増えたらここに追加、または全自動取得ロジックへ。
-SHEETS_DICT = {
-    "2026年": {"03月": "1502960872", "02月": "別のGID", "01月": "別のGID"},
-    "2025年": {"12月": "別のGID", "03月": "別のGID"},
-    "2024年": {"03月": "別のGID"}
-}
 
 # --- 補助関数 ---
-@st.cache_data(ttl=300)
-def load_data(gid):
+@st.cache_data(ttl=60)
+def load_data_by_sheet_name(sheet_name):
+    """
+    もっとも簡単な方法：GIDを使わず、シート名(2603など)でCSVをダウンロードする
+    """
     try:
-        return pd.read_csv(f"{BASE_EXPORT_URL}{gid}", header=None)
+        # シート名（例: 2603）を直接指定してエクスポートするURL
+        url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+        df = pd.read_csv(url, header=None)
+        return df
     except:
         return pd.DataFrame()
 
@@ -61,30 +56,31 @@ def fmt_num(val, is_reached, unit="", is_bold=False):
 def fmt_ratio(val, is_reached):
     return color_text(f"{val:.1f}%", is_reached)
 
-# --- サイドバー：期間選択（動的） ---
+# --- サイドバー：期間選択 ---
 st.sidebar.header("📅 期間選択")
 
-# 1. 年の選択
-selected_year = st.sidebar.selectbox("年を選択", list(SHEETS_DICT.keys()))
+# 1. 年の選択（表示上のラベル）
+year_val = st.sidebar.selectbox("年を選択", ["2026", "2025", "2024"])
 
 # 2. 月の選択
-available_months = SHEETS_DICT[selected_year]
-selected_month_label = st.sidebar.selectbox("月を選択", list(available_months.keys()))
-current_gid = available_months[selected_month_label]
+# シート名が「2603」という形式なので、それに合わせるための選択
+month_val = st.sidebar.selectbox("月を選択", [f"{i:02d}" for i in range(12, 0, -1)])
 
-# データ読み込み
-df_raw = load_data(current_gid)
+# スプレッドシートの実際のシート名を作成（例：2603）
+target_sheet_name = f"{year_val[2:]}{month_val}"
+
+# 3. 週の選択
+week_map = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
+selected_week = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
+row_idx = week_map[selected_week]
+
+# データの読み込み
+df_raw = load_data_by_sheet_name(target_sheet_name)
 
 if not df_raw.empty:
-    # 3. 週の選択
-    week_map = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
-    selected_week = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
-    row_idx = week_map[selected_week]
-
-    st.title(f"ストアカルテ {selected_year}{selected_month_label}")
+    st.title(f"ストアカルテ {year_val}年{month_val}月")
 
     # --- 1. All Stores ---
-    # 月次受注額 (F12:F53合計)
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     g6_mtd_t, i6_mtd_b, k6_mtd_l = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
@@ -137,4 +133,4 @@ if not df_raw.empty:
     st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
 else:
-    st.warning("この月のデータが見つかりません。GIDの設定を確認してください。")
+    st.error(f"シート「{target_sheet_name}」が見つかりませんでした。スプレッドシートのタブ名が半角数字4桁（例：2603）になっているか確認してください。")
