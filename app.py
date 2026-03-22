@@ -24,7 +24,6 @@ SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
 
 @st.cache_data(ttl=30)
 def load_data_safe(sheet_name):
-    # シート名指定でCSVを読み込むURL
     url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
     try:
         df = pd.read_csv(url, header=None)
@@ -34,6 +33,7 @@ def load_data_safe(sheet_name):
 
 def get_score(df, row, col):
     try:
+        if row is None or row <= 0: return 0
         val = df.iloc[row-1, col-1]
         if pd.isna(val): return 0
         s_val = str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip()
@@ -41,19 +41,16 @@ def get_score(df, row, col):
     except:
         return 0
 
-# --- ヘルパー関数群（エラー回避のためロジックを分離） ---
+# --- ヘルパー関数 ---
 
 def color_text(text, is_reached):
     cls = "reach" if is_reached else "unmet"
     return f'<span class="{cls}">{text}</span>'
 
 def fmt_num(val, is_reached, unit=""):
-    """数値をカンマ区切りにする。100未満なら小数点2桁"""
     abs_v = abs(val)
-    if abs_v >= 100:
-        txt = f"{unit}{abs_v:,.0f}"
-    else:
-        txt = f"{unit}{abs_v:.2f}"
+    # 100未満（CVRなど）は小数、それ以外は整数カンマ
+    txt = f"{unit}{abs_v:,.0f}" if abs_v >= 100 else f"{unit}{abs_v:.2f}"
     return color_text(txt, is_reached)
 
 def fmt_ratio(val, is_reached):
@@ -62,37 +59,42 @@ def fmt_ratio(val, is_reached):
 # --- サイドバー ---
 st.sidebar.header("📅 期間選択")
 y_val = st.sidebar.selectbox("年を選択", ["2026", "2025", "2024"])
-m_val = st.sidebar.selectbox("月を選択", [f"{i:02d}" for i in range(12, 0, -1)])
-target_sheet = f"{y_val[2:]}{m_val}" # 例: 2603
+m_val = st.sidebar.selectbox("月を選択", [f"{i:02d}" for i in range(1, 13)]) # 1月から12月
+target_sheet = f"{y_val[2:]}{m_val}"
 
 df_raw, error_detail = load_data_safe(target_sheet)
 
 if df_raw is None:
-    st.error(f"シート「{target_sheet}」が読み込めませんでした。")
-    st.markdown(f"""
-    **原因の可能性があります:**
-    1. スプレッドシートのタブ名が「{target_sheet}」（半角数字4桁）になっていますか？
-    2. 右上の「共有」ボタンから「リンクを知っている全員」に公開されていますか？
-    """)
-    if error_detail:
-        st.caption(f"エラー詳細: {error_detail}")
+    st.error(f"シート「{target_sheet}」が見つかりません。")
+    st.info(f"スプレッドシートのタブ名が「{target_sheet}」になっているか、共有設定が公開されているか確認してください。")
 else:
-    # 行特定ロジック
-    def find_r(keyword):
-        try:
-            mask = df_raw[0].astype(str).str.contains(keyword, na=False)
+    # --- 行番号を自動で特定する（検索ルールを強化） ---
+    def find_r_advanced(keywords):
+        """A列から複数のキーワードのいずれかを含む行を探す"""
+        for kw in keywords:
+            mask = df_raw[0].astype(str).str.contains(kw, na=False, case=False)
             res = df_raw[mask].index
-            return res[0] + 1 if len(res) > 0 else None
-        except: return None
+            if len(res) > 0:
+                return res[0] + 1
+        return None
 
-    # デフォルト行
-    rows_map = {w: find_r(w) or d for w, d in zip(["W1","W2","W3","W4","W5","W6"], [57,58,59,60,61,62])}
+    # 各週の行を特定（月によってズレても大丈夫なように予備の行番号もセット）
+    rows_map = {
+        "W1": find_r_advanced(["W1", "3/1", "1週"]) or 57,
+        "W2": find_r_advanced(["W2", "3/2", "2週"]) or 58,
+        "W3": find_r_advanced(["W3", "3/9", "3週"]) or 59,
+        "W4": find_r_advanced(["W4", "3/16", "4週"]) or 60,
+        "W5": find_r_advanced(["W5", "3/23", "5週"]) or 61,
+        "W6": find_r_advanced(["W6", "3/30", "6週"]) or 62,
+    }
+
     sel_w = st.sidebar.selectbox("表示週", list(rows_map.keys()))
     row_idx = rows_map[sel_w]
 
     st.title(f"ストアカルテ {y_val}年{m_val}月")
 
     # --- 1. All Stores ---
+    # F12:F53 (12行目から53行目) を合計
     actual_sum = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_t = get_score(df_raw, 3, 7)
     i3_b = get_score(df_raw, 3, 9)
@@ -126,7 +128,8 @@ else:
     for w, r in rows_map.items():
         wa = get_score(df_raw, r, 6)
         wt, wb, wl = get_score(df_raw, r, 7), get_score(df_raw, r, 10), get_score(df_raw, r, 13)
-        if wa > 0 or wt > 0:
+        # 実績または目標がある週のみ表示
+        if wa != 0 or wt != 0:
             w_rows += f'<tr><td>{w}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num(wa-wt, wa>=wt)}</td><td>{fmt_ratio(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num(wa-wb, wa>=wb)}</td><td>{fmt_ratio(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     
     st.markdown(f'<h4>WEEKサマリー</h4><table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
@@ -146,12 +149,8 @@ else:
         lr = av/lv*100 if lv else 0
         u = "¥" if k=="客単価" else ""
         
-        # 目標値の整形をf-stringの外で行う（エラー回避の要）
-        if tv >= 100:
-            fmt_target = f"{u}{tv:,.0f}"
-        else:
-            fmt_target = f"{u}{tv:.2f}"
-            
-        k_rows += f'<tr><td><b>{"◯" if tr>=100 else "△" if tr>=90 else "✕"}</b></td><td>{k}</td><td>{fmt_target}</td><td>{fmt_num(av, reached, u)}</td><td>{fmt_ratio(tr, tr>=100)}</td><td>{fmt_ratio(lr, lr>=100)}</td></tr>'
+        target_txt = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
+        
+        k_rows += f'<tr><td><b>{"◯" if tr>=100 else "△" if tr>=90 else "✕"}</b></td><td>{k}</td><td>{target_txt}</td><td>{fmt_num(av, reached, u)}</td><td>{fmt_ratio(tr, tr>=100)}</td><td>{fmt_ratio(lr, lr>=100)}</td></tr>'
     
     st.markdown(f'<h4>KPI別</h4><table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
