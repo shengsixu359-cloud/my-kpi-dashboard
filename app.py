@@ -15,6 +15,7 @@ st.markdown('''
     .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
     .base-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
     .kpi-table th { background-color: #444!important; color: white!important; padding: 10px; border: 1px solid #ddd; }
+    h4 { margin-top: 20px; margin-bottom: 10px; padding-left: 0; border-left: none; }
 </style>
 ''', unsafe_allow_html=True)
 
@@ -23,9 +24,6 @@ SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
 
 @st.cache_data(ttl=30)
 def load_data_safe(sheet_name):
-    """
-    シート名でCSVを読み込む。失敗した場合はエラー詳細を返す。
-    """
     url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
     try:
         df = pd.read_csv(url, header=None)
@@ -33,13 +31,12 @@ def load_data_safe(sheet_name):
             return None, "シートは読み込めましたが、中身が空です。"
         return df, None
     except Exception as e:
-        return None, f"読み込みエラー: スプレッドシートの共有設定が「リンクを知っている全員」になっているか確認してください。 (詳細: {e})"
+        return None, f"読み込みエラー: {e}"
 
 def get_score(df, row, col):
     try:
         val = df.iloc[row-1, col-1]
         if pd.isna(val): return 0
-        # 文字列クレンジング
         s_val = str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip()
         return pd.to_numeric(s_val, errors='coerce') if s_val != "" else 0
     except:
@@ -56,19 +53,23 @@ def fmt_num(val, is_reached, unit=""):
 st.sidebar.header("📅 期間選択")
 y_val = st.sidebar.selectbox("年を選択", ["2026", "2025", "2024"])
 m_val = st.sidebar.selectbox("月を選択", [f"{i:02d}" for i in range(12, 0, -1)])
-target_sheet = f"{y_val[2:]}{m_val}" # 例: 2603
+target_sheet = f"{y_val[2:]}{m_val}"
 
 df_raw, error_msg = load_data_safe(target_sheet)
 
 if error_msg:
-    st.error(error_msg)
-    st.info(f"確認事項:\n1. スプレッドシートの右上の「共有」→「一般的なアクセス」を「リンクを知っている全員」にしてください。\n2. タブ名が「{target_sheet}」という半角数字4桁になっているか確認してください。")
+    st.error(f"シート「{target_sheet}」の読み込みに失敗しました。")
+    st.info("確認事項: 1. スプレッドシートを「リンクを知っている全員」に公開。 2. タブ名を「2603」等の4桁数字にする。")
 elif df_raw is not None:
     # 行特定ロジック
     def find_r(keyword):
-        res = df_raw[df_raw[0].astype(str).str.contains(keyword, na=False)].index
-        return res[0] + 1 if len(res) > 0 else None
+        try:
+            mask = df_raw[0].astype(str).str.contains(keyword, na=False)
+            res = df_raw[mask].index
+            return res[0] + 1 if len(res) > 0 else None
+        except: return None
 
+    # デフォルト行番号とのマッピング
     rows = {w: find_r(w) or d for w, d in zip(["W1","W2","W3","W4","W5","W6"], [57,58,59,60,61,62])}
     sel_w = st.sidebar.selectbox("表示週", list(rows.keys()))
     row_idx = rows[sel_w]
@@ -76,25 +77,32 @@ elif df_raw is not None:
     st.title(f"ストアカルテ {y_val}年{m_val}月")
 
     # --- 1. All Stores ---
-    # F12:F53の合計を計算
-    actual_sum = 0
-    for i in range(12, 54):
-        actual_sum += get_score(df_raw, i, 6)
-
-    g3_t, i3_b, k3_l = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
-    g6_t, i6_b, k6_l = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
+    actual_sum = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
+    g3_t = get_score(df_raw, 3, 7) # 目標
+    i3_b = get_score(df_raw, 3, 9) # 予算
+    k3_l = get_score(df_raw, 3, 11) # 前年
+    g6_t = get_score(df_raw, 6, 7) # MTD目標
+    i6_b = get_score(df_raw, 6, 9) # MTD予算
+    k6_l = get_score(df_raw, 6, 11) # MTD前年
 
     st.markdown(f'''
     <h4>All Stores ※FC excluded</h4>
     <table class="base-table">
         <tr><th>月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{actual_sum:,.0f}</td></tr>
-        <tr><th>月次目標</th><td>{g3_t:,.0f}</td><th>月次予算</th><td>{i3_bg:,.0f}</td><th>前年受注額</th><td>{k3_l:,.0f}</td></tr>
+        <tr><th>月次目標</th><td>{g3_t:,.0f}</td><th>月次予算</th><td>{i3_b:,.0f}</td><th>前年受注額</th><td>{k3_l:,.0f}</td></tr>
         <tr><th>目標比</th><td>{color_text(f"{actual_sum/g3_t*100:.1f}%" if g3_t else "0.0%", actual_sum>=g3_t)}</td>
             <th>予算比</th><td>{color_text(f"{actual_sum/i3_b*100:.1f}%" if i3_b else "0.0%", actual_sum>=i3_b)}</td>
             <th>前年比</th><td>{color_text(f"{actual_sum/k3_l*100:.1f}%" if k3_l else "0.0%", actual_sum>=k3_l)}</td></tr>
         <tr><th>差額</th><td>{fmt_num(actual_sum-g3_t, actual_sum>=g3_t)}</td>
             <th>差額</th><td>{fmt_num(actual_sum-i3_b, actual_sum>=i3_b)}</td>
             <th>差額</th><td>{fmt_num(actual_sum-k3_l, actual_sum>=k3_l)}</td></tr>
+        <tr><th>MTD目標</th><td>{g6_t:,.0f}</td><th>MTD予算</th><td>{i6_b:,.0f}</td><th>MTD前年</th><td>{k6_l:,.0f}</td></tr>
+        <tr><th>MTD目標 %</th><td>{color_text(f"{actual_sum/g6_t*100:.1f}%" if g6_t else "0.0%", actual_sum>=g6_t)}</td>
+            <th>MTD予算 %</th><td>{color_text(f"{actual_sum/i6_b*100:.1f}%" if i6_b else "0.0%", actual_sum>=i6_b)}</td>
+            <th>MTD前年 %</th><td>{color_text(f"{actual_sum/k6_l*100:.1f}%" if k6_l else "0.0%", actual_sum>=k6_l)}</td></tr>
+        <tr><th>MTD目標 差額</th><td>{fmt_num(actual_sum-g6_t, actual_sum>=g6_t)}</td>
+            <th>MTD予算 差額</th><td>{fmt_num(actual_sum-i6_b, actual_sum>=i6_b)}</td>
+            <th>MTD前年 差額</th><td>{fmt_num(actual_sum-k6_l, actual_sum>=k6_l)}</td></tr>
     </table>
     ''', unsafe_allow_html=True)
 
