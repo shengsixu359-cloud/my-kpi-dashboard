@@ -6,7 +6,7 @@ import pandas as pd
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
 # スタイルの定義
-style_html = '<style>html, body, [class*="css"] { font-family: "Meiryo", "MS PGothic", sans-serif; } .reach { color: #1f77b4; font-weight: bold; } .unmet { color: #d62728; } .eval-mark { font-weight: bold; font-size: 1.2em; display: inline-block; width: 1.5em; text-align: center; } .kpi-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px; } .kpi-table th { background-color: #444; color: white; padding: 10px; text-align: center; border: 1px solid #ddd; } .kpi-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }</style>'
+style_html = '<style>html, body, [class*="css"] { font-family: "Meiryo", "MS PGothic", sans-serif; } .reach { color: #1f77b4; font-weight: bold; } .unmet { color: #d62728; } .eval-mark { font-weight: bold; font-size: 1.2em; display: inline-block; width: 1.5em; text-align: center; } .all-stores-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; } .all-stores-table th { background-color: #4db6ac; color: white; padding: 8px; border: 1px solid #fff; text-align: center; } .all-stores-table td { border: 1px solid #ddd; padding: 8px; text-align: center; } .kpi-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px; } .kpi-table th { background-color: #444; color: white; padding: 10px; text-align: center; border: 1px solid #ddd; } .kpi-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }</style>'
 st.markdown(style_html, unsafe_allow_html=True)
 st.title("ストアカルテ2026年3月")
 
@@ -37,22 +37,17 @@ def col_to_num(col_str):
     return num
 
 def get_eval_mark(ratio):
-    # シンプルな太字にするためのクラス付きスパンを返す
     mark = "✕"
     if ratio >= 100: mark = "◯"
     elif ratio >= 90: mark = "△"
     return f'<span class="eval-mark">{mark}</span>'
 
 def format_ratio_text(ratio):
-    if ratio >= 100:
-        return f'<span class="reach">{ratio:.1f}%</span>'
-    else:
-        return f'<span class="unmet">{ratio:.1f}%</span>'
+    return f'<span class="{"reach" if ratio >= 100 else "unmet"}">{ratio:.1f}%</span>'
 
 def diff_fmt(val):
     if pd.isna(val) or val == 0: return "0"
-    sign = "+" if val > 0 else "▲"
-    return f"{sign}{abs(val):,.0f}"
+    return f'{"▲" if val < 0 else "+"}{abs(val):,.0f}'
 
 def num_fmt(val, unit=""):
     if pd.isna(val) or val == 0: return "-"
@@ -69,6 +64,19 @@ if not df_raw.empty:
     selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_week_label]
 
+    # --- TOP: All Stores サマリー (追加) ---
+    # セル位置はキャプチャに基づき調整（必要に応じて修正してください）
+    all_total = get_score(df_raw, 3, 5)  # 月次受注額
+    all_target = get_score(df_raw, 4, 2) # 月次目標
+    all_ratio = get_score(df_raw, 5, 2)  # 目標比
+    all_diff = get_score(df_raw, 6, 2)   # 差額
+    mtd_target = get_score(df_raw, 7, 2) # MTD目標
+    mtd_ratio = get_score(df_raw, 8, 2)  # MTD目標%
+    mtd_diff = get_score(df_raw, 9, 2)   # MTD目標差額
+
+    all_stores_html = f'<h4>All Stores ※FC excluded</h4><table class="all-stores-table"><tr><th style="width:15%;">月次受注額</th><td colspan="5" style="font-size:1.2em; font-weight:bold;">¥{all_total:,.0f}</td></tr><tr><th>月次目標</th><td>¥{all_target:,.0f}</td><th>月次予算</th><td>-</td><th>前年受注額</th><td>-</td></tr><tr><th>目標比</th><td>{format_ratio_text(all_ratio)}</td><th>予算比</th><td>-</td><th>前年比</th><td>-</td></tr><tr><th>差額</th><td>{diff_fmt(all_diff)}</td><th>差額</th><td>-</td><th>差額</th><td>-</td></tr><tr><th>MTD目標</th><td>¥{mtd_target:,.0f}</td><th>MTD予算</th><td>-</td><th>MTD前年</th><td>-</td></tr><tr><th>MTD目標 %</th><td>{format_ratio_text(mtd_ratio)}</td><th>MTD予算 %</th><td>-</td><th>MTD前年 %</th><td>-</td></tr><tr><th>MTD目標 差額</th><td>{diff_fmt(mtd_diff)}</td><th>MTD予算 差額</th><td>-</td><th>MTD前年 差額</th><td>-</td></tr></table>'
+    st.markdown(all_stores_html, unsafe_allow_html=True)
+
     # --- 受注実績テーブル ---
     act_s = get_score(df_raw, row_idx, col_to_num("F"))
     tgt_s = get_score(df_raw, row_idx, col_to_num("G"))
@@ -78,30 +86,17 @@ if not df_raw.empty:
     ly_r = get_score(df_raw, row_idx, col_to_num("N"))
     ly_diff = act_s - ly_s
 
-    # タイトル横に期間を付け足し
     sales_html = f'<h4>受注実績 {selected_week_label}</h4><table class="kpi-table"><tr><th style="width: 25%;">受注実績</th><th style="width: 25%;">目標</th><th style="width: 25%;">目標比</th><th style="width: 25%;">差額</th></tr><tr><td rowspan="3" style="font-size: 1.5em; font-weight: bold;">¥{act_s:,.0f}</td><td>¥{tgt_s:,.0f}</td><td>{format_ratio_text(ratio_s)}</td><td>{diff_fmt(diff_s)}</td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{ly_s:,.0f}</td><td>{format_ratio_text(ly_r)}</td><td>{diff_fmt(ly_diff)}</td></tr></table>'
     st.markdown(sales_html, unsafe_allow_html=True)
 
     # --- KPI別テーブル ---
-    kpi_cols = {
-        "座数":   {"act": "AR", "tgt": "AV", "ly": "AZ"},
-        "客単価": {"act": "AU", "tgt": "AY", "ly": "BC"},
-        "CVR":    {"act": "AS", "tgt": "AW", "ly": "BA"},
-        "客数":   {"act": "AT", "tgt": "AX", "ly": "BB"},
-    }
-
+    kpi_cols = {"座数": {"act": "AR", "tgt": "AV", "ly": "AZ"}, "客単価": {"act": "AU", "tgt": "AY", "ly": "BC"}, "CVR": {"act": "AS", "tgt": "AW", "ly": "BA"}, "客数": {"act": "AT", "tgt": "AX", "ly": "BB"}}
     rows_html = ""
     for item, cols in kpi_cols.items():
-        a = get_score(df_raw, row_idx, col_to_num(cols["act"]))
-        t = get_score(df_raw, row_idx, col_to_num(cols["tgt"]))
-        ly = get_score(df_raw, row_idx, col_to_num(cols["ly"]))
-        tr = (a / t * 100) if t else 0
-        lr = (a / ly * 100) if ly else 0
-        unit = "¥" if item == "客単価" else ""
-        rows_html += f'<tr><td>{get_eval_mark(tr)}</td><td>{item}</td><td>{num_fmt(t, unit)}</td><td>{num_fmt(a, unit)}</td><td>{format_ratio_text(tr)}</td><td>{format_ratio_text(lr)}</td></tr>'
+        a, t, ly = get_score(df_raw, row_idx, col_to_num(cols["act"])), get_score(df_raw, row_idx, col_to_num(cols["tgt"])), get_score(df_raw, row_idx, col_to_num(cols["ly"]))
+        tr, lr = (a/t*100) if t else 0, (a/ly*100) if ly else 0
+        rows_html += f'<tr><td>{get_eval_mark(tr)}</td><td>{item}</td><td>{num_fmt(t, "¥" if item=="客単価" else "")}</td><td>{num_fmt(a, "¥" if item=="客単価" else "")}</td><td>{format_ratio_text(tr)}</td><td>{format_ratio_text(lr)}</td></tr>'
 
-    full_kpi_html = f'<h4>KPI別</h4><table class="kpi-table"><tr><th style="width: 80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{rows_html}</table>'
-    st.markdown(full_kpi_html, unsafe_allow_html=True)
-
+    st.markdown(f'<h4>KPI別</h4><table class="kpi-table"><tr><th style="width: 80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{rows_html}</table>', unsafe_allow_html=True)
 else:
     st.warning("データを読み込めませんでした。")
