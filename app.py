@@ -20,14 +20,15 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 # 2. 基本設定
-SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3Ems_G9vTKGtvVVTni8"
+# ※2026年3月(2603)のGIDを固定値として設定します
+SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
+GID_2603 = "1502960872"
 
 @st.cache_data(ttl=30)
-def load_data(month_name):
-    url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={month_name}"
+def load_data_by_gid(gid):
+    url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={gid}"
     try:
-        df = pd.read_csv(url, header=None)
-        return df
+        return pd.read_csv(url, header=None)
     except:
         return pd.DataFrame()
 
@@ -44,16 +45,15 @@ def get_val(df, r, c):
 def color_text(text, is_reached):
     return f'<span class="{"reach" if is_reached else "unmet"}">{text}</span>'
 
-# --- サイドバー ---
-st.sidebar.header("📅 2026年度 期間選択")
-month_list = [f"{i:02d}" for i in range(1, 13)]
-selected_month = st.sidebar.selectbox("表示月を選択", month_list, index=2) # 3月デフォルト
-target_sheet = f"26{selected_month}"
+# --- メイン処理 ---
+st.title("ストアカルテ 2026年03月")
 
-df = load_data(target_sheet)
+# データの読み込み（まずは2603固定で確実に表示させます）
+df = load_data_by_gid(GID_2603)
 
 if not df.empty:
-    # 週の行特定
+    # 期間選択（サイドバー）
+    st.sidebar.header("📅 期間選択")
     def find_r(kw):
         mask = df[0].astype(str).str.contains(kw, na=False)
         res = df[mask].index
@@ -63,25 +63,20 @@ if not df.empty:
     sel_w = st.sidebar.selectbox("表示週を選択", list(rows.keys()))
     row_idx = rows[sel_w]
 
-    st.title(f"ストアカルテ 2026年{selected_month}月")
-
     # --- 1. All Stores (ご提示のロジックを反映) ---
     # 月次受注額=sum(F12:F53)
     g2_act = sum([get_val(df, i, 6) for i in range(12, 54)])
-    # 月次目標=sum(G12:G53) ※スプレッドシート上のG3相当
+    # 月次目標=sum(G12:G53)
     g3_tgt = sum([get_val(df, i, 7) for i in range(12, 54)])
     
-    # 月次予算=INDEX(J$67:J$110, MATCH($A$2...))
-    # ※スプレッドシート上のI3相当のセル(ここでは直接セル指定)
+    # 月次予算(I3) / 前年受注額(K3) はセルから直接取得
     i3_bg = get_val(df, 3, 9) 
-    # 前年受注額=INDEX(M$67:M$110, ...) 
-    # ※スプレッドシート上のK3相当
     k3_ly = get_val(df, 3, 11)
 
-    # MTD系 (VLOOKUP相当: 行6の各列を参照)
-    g6_mtd_t = get_val(df, 6, 7)  # G6
-    i6_mtd_b = get_val(df, 6, 9)  # I6
-    k6_mtd_l = get_val(df, 6, 11) # K6
+    # MTD系 (G6, I6, K6)
+    g6_mtd_t = get_val(df, 6, 7)
+    i6_mtd_b = get_val(df, 6, 9)
+    k6_mtd_l = get_val(df, 6, 11)
 
     all_html = f'''
     <table class="base-table">
@@ -133,4 +128,4 @@ if not df.empty:
     st.markdown(f'<h4>KPI別</h4><table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_html}</table>', unsafe_allow_html=True)
 
 else:
-    st.error("データの読み込みに失敗しました。")
+    st.error("データの読み込みに失敗しました。スプレッドシートが「リンクを知っている全員」に公開されているか確認してください。")
