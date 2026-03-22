@@ -5,19 +5,8 @@ import pandas as pd
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# スタイルの定義
-style_html = """
-<style>
-    html, body, [class*="css"] {
-        font-family: "Meiryo", "MS PGothic", sans-serif;
-    }
-    .reach { color: #1f77b4; font-weight: bold; }
-    .unmet { color: #d62728; }
-    .kpi-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px; }
-    .kpi-table th { background-color: #444; color: white; padding: 10px; text-align: center; border: 1px solid #ddd; }
-    .kpi-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-</style>
-"""
+# スタイルの定義（一行にまとめてエスケープを防止）
+style_html = '<style>html, body, [class*="css"] { font-family: "Meiryo", "MS PGothic", sans-serif; } .reach { color: #1f77b4; font-weight: bold; } .unmet { color: #d62728; } .kpi-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px; } .kpi-table th { background-color: #444; color: white; padding: 10px; text-align: center; border: 1px solid #ddd; } .kpi-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }</style>'
 st.markdown(style_html, unsafe_allow_html=True)
 st.title("ストアカルテ2026年3月")
 
@@ -53,7 +42,6 @@ def get_eval_mark(ratio):
     else: return "✕"
 
 def format_ratio_text(ratio):
-    # HTMLタグを含めた文字列を返す
     if ratio >= 100:
         return f'<span class="reach">{ratio:.1f}%</span>'
     else:
@@ -74,7 +62,7 @@ if not df_raw.empty:
     selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_week_label]
 
-    # --- 受注実績テーブル生成 ---
+    # --- 受注実績テーブル ---
     act_s = get_score(df_raw, row_idx, col_to_num("F"))
     tgt_s = get_score(df_raw, row_idx, col_to_num("G"))
     ratio_s = get_score(df_raw, row_idx, col_to_num("I"))
@@ -83,36 +71,10 @@ if not df_raw.empty:
     ly_r = get_score(df_raw, row_idx, col_to_num("N"))
     ly_diff = act_s - ly_s
 
-    sales_html = f"""
-    <h4>受注実績</h4>
-    <table class="kpi-table">
-        <tr>
-            <th style="width: 25%;">受注実績</th>
-            <th style="width: 25%;">目標</th>
-            <th style="width: 25%;">目標比</th>
-            <th style="width: 25%;">差額</th>
-        </tr>
-        <tr>
-            <td rowspan="3" style="font-size: 1.5em; font-weight: bold;">¥{act_s:,.0f}</td>
-            <td>¥{tgt_s:,.0f}</td>
-            <td>{format_ratio_text(ratio_s)}</td>
-            <td>¥{diff_s:,.0f}</td>
-        </tr>
-        <tr>
-            <th>LY</th>
-            <th>LY比</th>
-            <th>差額</th>
-        </tr>
-        <tr>
-            <td>¥{ly_s:,.0f}</td>
-            <td>{format_ratio_text(ly_r)}</td>
-            <td>¥{ly_diff:,.0f}</td>
-        </tr>
-    </table>
-    """
+    sales_html = f'<h4>受注実績</h4><table class="kpi-table"><tr><th style="width: 25%;">受注実績</th><th style="width: 25%;">目標</th><th style="width: 25%;">目標比</th><th style="width: 25%;">差額</th></tr><tr><td rowspan="3" style="font-size: 1.5em; font-weight: bold;">¥{act_s:,.0f}</td><td>¥{tgt_s:,.0f}</td><td>{format_ratio_text(ratio_s)}</td><td>¥{diff_s:,.0f}</td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{ly_s:,.0f}</td><td>{format_ratio_text(ly_r)}</td><td>¥{ly_diff:,.0f}</td></tr></table>'
     st.markdown(sales_html, unsafe_allow_html=True)
 
-    # --- KPI別テーブル生成 ---
+    # --- KPI別テーブル ---
     kpi_cols = {
         "座数":   {"act": "AR", "tgt": "AV", "ly": "AZ"},
         "客単価": {"act": "AU", "tgt": "AY", "ly": "BC"},
@@ -128,32 +90,9 @@ if not df_raw.empty:
         tr = (a / t * 100) if t else 0
         lr = (a / ly * 100) if ly else 0
         unit = "¥" if item == "客単価" else ""
-        
-        rows_html += f"""
-        <tr>
-            <td>{get_eval_mark(tr)}</td>
-            <td>{item}</td>
-            <td>{num_fmt(t, unit)}</td>
-            <td>{num_fmt(a, unit)}</td>
-            <td>{format_ratio_text(tr)}</td>
-            <td>{format_ratio_text(lr)}</td>
-        </tr>
-        """
+        rows_html += f'<tr><td>{get_eval_mark(tr)}</td><td>{item}</td><td>{num_fmt(t, unit)}</td><td>{num_fmt(a, unit)}</td><td>{format_ratio_text(tr)}</td><td>{format_ratio_text(lr)}</td></tr>'
 
-    full_kpi_html = f"""
-    <h4>KPI別</h4>
-    <table class="kpi-table">
-        <tr>
-            <th style="width: 80px;">評</th>
-            <th>KPI</th>
-            <th>目標</th>
-            <th>実績</th>
-            <th>目標比</th>
-            <th>LY比</th>
-        </tr>
-        {rows_html}
-    </table>
-    """
+    full_kpi_html = f'<h4>KPI別</h4><table class="kpi-table"><tr><th style="width: 80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{rows_html}</table>'
     st.markdown(full_kpi_html, unsafe_allow_html=True)
 
 else:
