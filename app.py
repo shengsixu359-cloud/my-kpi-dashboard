@@ -17,27 +17,31 @@ SHEETS = {
 }
 
 @st.cache_data(ttl=60)
-def load_data(gid):
+def load_raw_df(gid):
     try:
-        df = pd.read_csv(f"{BASE_URL}{gid}")
-        df.columns = [str(c).strip() for c in df.columns]
-        return df
+        # header=Noneで読み込むことで、セル位置(行列番号)で指定可能にする
+        return pd.read_csv(f"{BASE_URL}{gid}", header=None)
     except:
         return pd.DataFrame()
 
-# 数値列を安全に合計する関数
-def safe_sum(df, col_names):
-    for col in col_names:
-        if col in df.columns:
-            return pd.to_numeric(df[col], errors='coerce').sum()
-    return 0
+def get_cell_value(df, row, col):
+    """特定のセルの値を数値として取得 (Excel形式のA1→0,0に対応)"""
+    try:
+        val = df.iloc[row-1, col-1]
+        return pd.to_numeric(str(val).replace(',', '').replace('¥', ''), errors='coerce')
+    except:
+        return 0
 
 try:
     # データの読み込み
-    df_master = load_data(SHEETS["master"])
-    df_26 = load_data(SHEETS["kpi_26"])
-    df_25 = load_data(SHEETS["kpi_25"])
-    df_dtl = load_data(SHEETS["kpi_d"])
+    raw_master = load_raw_df(SHEETS["master"])
+    raw_26 = load_raw_df(SHEETS["kpi_26"])
+    raw_25 = load_raw_df(SHEETS["kpi_25"])
+    
+    # マスターデータ（店舗リスト用）を整形
+    df_master = raw_master.copy()
+    df_master.columns = [str(c).strip() for c in df_master.iloc[0]]
+    df_master = df_master[1:]
 
     # --- サイドバー：表示条件 ---
     st.sidebar.header("🔍 表示条件")
@@ -56,71 +60,48 @@ try:
     selected_store = st.sidebar.selectbox("店舗を選択", available_stores)
 
     # 3. 期間選択（プルダウン）
-    month_col = "月" if "月" in df_26.columns else "month"
-    months = sorted(df_26[month_col].dropna().unique())
-    selected_month = st.sidebar.selectbox("表示月を選択", months)
-    
-    week_col = "週" if "週" in df_26.columns else "week"
-    weeks = ["全週"] + sorted(df_26[df_26[month_col] == selected_month][week_col].dropna().unique().tolist())
-    selected_week = st.sidebar.selectbox("表示週を選択", weeks)
-
-    # --- フィルタリング ---
-    def filter_df(df):
-        if df.empty: return df
-        # 各シートで店舗名列を特定してフィルタ
-        s_col = "店舗名" if "店舗名" in df.columns else df.columns[0]
-        mask = (df[s_col] == selected_store) & (df[month_col] == selected_month)
-        if selected_week != "全週":
-            mask &= (df[week_col] == selected_week)
-        return df[mask]
-
-    f_26 = filter_df(df_26)
-    f_25 = filter_df(df_25)
+    # ※シート④(202603)から月と週のリストを取得（場所は仮定）
+    selected_month = st.sidebar.selectbox("表示月を選択", ["2026/03"]) # 固定またはリスト取得
+    selected_week = st.sidebar.selectbox("表示週を選択", ["全週", "1W", "2W", "3W", "4W", "5W"])
 
     # --- TOP: 全体受注実績サマリー ---
-    st.markdown(f"### 🏆 {selected_store} 受注実績サマリー ({selected_month} / {selected_week})")
+    st.markdown(f"### 🏆 全体受注実績サマリー ({selected_month})")
     
-    # 列名の候補（スプレッドシートの表記ゆれに対応）
-    sales_cols = ["受注実績", "実績", "売上", "売上実績"]
-    target_cols = ["目標", "受注目標"]
-
-    val_26 = safe_sum(f_26, sales_cols)
-    val_target = safe_sum(f_26, target_cols)
-    val_25 = safe_sum(f_25, sales_cols)
+    # ご指摘のセル位置から取得 (E3=行3,列5 / F3=行3,列6)
+    val_sales = get_cell_value(raw_26, 3, 5)  # E3: 受注金額
+    val_target = get_cell_value(raw_26, 3, 6) # F3: 目標
+    val_25 = get_cell_value(raw_25, 3, 5)     # 前年同時期のE3
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("受注実績", f"{val_sales:,.0f}円")
+    c2.metric("目標", f"{val_target:,.0f}円")
+    c3.metric("目標比", f"{(val_sales/val_target*100):.1f}%" if val_target else "0%")
+    c4.metric("目標差額", f"{(val_sales - val_target):,.0f}円")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("受注実績", f"{val_26:,.0f}")
-    c2.metric("目標", f"{val_target:,.0f}")
-    c3.metric("目標比", f"{(val_26/val_target*100):.1f}%" if val_target else "0%")
-    c4.metric("目標差額", f"{(val_26 - val_target):,.0f}")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("前年受注実績", f"{val_25:,.0f}")
-    c2.metric("前年比", f"{(val_26/val_25*100):.1f}%" if val_25 else "0%")
-    c3.metric("前年差額", f"{(val_26 - val_25):,.0f}")
+    c1.metric("前年実績", f"{val_25:,.0f}円")
+    c2.metric("前年比", f"{(val_sales/val_25*100):.1f}%" if val_25 else "0%")
+    c3.metric("前年差額", f"{(val_sales - val_25):,.0f}円")
+    
     st.divider()
 
     # --- KPI分析テーブル ---
     st.markdown("### 📈 指標別KPI分析")
     
-    kpi_items = ["座数", "客単価", "CVR", "客数"]
+    # KPI項目と、それぞれの値がスプレッドシートのどのセルにあるか（仮定）
+    # ※もし位置がわかる場合は、(行, 列)を修正してください
+    kpi_map = {
+        "座数": {"act": (5, 5), "tgt": (5, 6), "ly": (5, 7)},
+        "客単価": {"act": (6, 5), "tgt": (6, 6), "ly": (6, 7)},
+        "CVR": {"act": (7, 5), "tgt": (7, 6), "ly": (7, 7)},
+        "客数": {"act": (8, 5), "tgt": (8, 6), "ly": (8, 7)},
+    }
+    
     kpi_results = []
-
-    for item in kpi_items:
-        # 詳細シート(df_dtl)から該当KPIを抽出
-        d_store_col = "店舗名" if "店舗名" in df_dtl.columns else df_dtl.columns[0]
-        kpi_col = "KPI" if "KPI" in df_dtl.columns else (df_dtl.columns[1] if len(df_dtl.columns)>1 else "")
-        
-        row_dtl = df_dtl[(df_dtl[d_store_col] == selected_store) & 
-                        (df_dtl[month_col] == selected_month) & 
-                        (df_dtl[kpi_col] == item)]
-        
-        if selected_week != "全週":
-            row_dtl = row_dtl[row_dtl[week_col] == selected_week]
-
-        act = safe_sum(row_dtl, ["実績", "数値"])
-        tgt = safe_sum(row_dtl, ["目標"])
-        ly = safe_sum(row_dtl, ["前年実績", "前年"])
+    for item, pos in kpi_map.items():
+        act = get_cell_value(raw_26, pos["act"][0], pos["act"][1])
+        tgt = get_cell_value(raw_26, pos["tgt"][0], pos["tgt"][1])
+        ly = get_cell_value(raw_25, pos["ly"][0], pos["ly"][1])
 
         kpi_results.append({
             "KPI指標": item,
@@ -133,4 +114,4 @@ try:
     st.table(pd.DataFrame(kpi_results))
 
 except Exception as e:
-    st.error(f"表示エラー: {e}")
+    st.error(f"データの抽出中にエラーが発生しました
