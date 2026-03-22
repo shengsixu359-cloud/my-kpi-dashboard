@@ -5,7 +5,7 @@ import pandas as pd
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# スタイルの定義
+# スタイルの定義（縁を削除、フォント指定）
 st.markdown('''
 <style>
     html,body,[class*="css"]{font-family:"Meiryo",sans-serif;}
@@ -16,7 +16,9 @@ st.markdown('''
     .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
     .base-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
     .kpi-table th { background-color: #444!important; color: white!important; padding: 10px; border: 1px solid #ddd; }
-    h4 { margin-top: 20px; margin-bottom: 10px; border-left: 5px solid #4db6ac; padding-left: 10px; }
+    
+    /* 見出しから縁（border-left）を削除 */
+    h4 { margin-top: 20px; margin-bottom: 10px; padding-left: 0; border-left: none; }
 </style>
 ''', unsafe_allow_html=True)
 
@@ -40,7 +42,7 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 表示用ヘルパー関数群 (ここで全ての整形を行う) ---
+# --- 表示用ヘルパー関数群 ---
 
 def color_text(text, is_reached):
     """色付きのスパンを返す"""
@@ -48,7 +50,7 @@ def color_text(text, is_reached):
     return f'<span class="{cls}">{text}</span>'
 
 def fmt_num(val, is_reached, unit="", is_bold=False):
-    """数値をカンマ区切りにし、色を付ける。▲や+は付けない"""
+    """数値をカンマ区切りにし、色を付ける"""
     if abs(val) >= 100:
         txt = f"{unit}{abs(val):,.0f}"
     else:
@@ -76,6 +78,7 @@ if not df_raw.empty:
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     g6_mtd_t, i6_mtd_b, k6_mtd_l = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
 
+    # 見出しから緑の縁が消えます
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
     all_html = f'''
     <table class="base-table">
@@ -123,7 +126,6 @@ if not df_raw.empty:
         u = "¥" if k=="客単価" else ""
         m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
         
-        # 数値の整形を外で行う
         fmt_target = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         fmt_actual = fmt_num(av, reached, u)
         
