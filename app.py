@@ -23,14 +23,9 @@ st.markdown('''
 # 2. データ取得設定
 SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
 
-# --- 補助関数 ---
 @st.cache_data(ttl=60)
 def load_data_by_sheet_name(sheet_name):
-    """
-    もっとも簡単な方法：GIDを使わず、シート名(2603など)でCSVをダウンロードする
-    """
     try:
-        # シート名（例: 2603）を直接指定してエクスポートするURL
         url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         df = pd.read_csv(url, header=None)
         return df
@@ -43,6 +38,15 @@ def get_score(df, row, col):
         if pd.isna(val): return 0
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
+
+# A列から「W1」「W2」などのキーワードを探して行番号を返す関数（ズレ防止）
+def find_row_by_keyword(df, keyword):
+    try:
+        # A列(index 0)から検索
+        res = df[df[0].astype(str).str.contains(keyword, na=False)].index
+        return res[0] + 1 if len(res) > 0 else None
+    except:
+        return None
 
 def color_text(text, is_reached):
     cls = "reach" if is_reached else "unmet"
@@ -58,26 +62,23 @@ def fmt_ratio(val, is_reached):
 
 # --- サイドバー：期間選択 ---
 st.sidebar.header("📅 期間選択")
-
-# 1. 年の選択（表示上のラベル）
 year_val = st.sidebar.selectbox("年を選択", ["2026", "2025", "2024"])
-
-# 2. 月の選択
-# シート名が「2603」という形式なので、それに合わせるための選択
 month_val = st.sidebar.selectbox("月を選択", [f"{i:02d}" for i in range(12, 0, -1)])
-
-# スプレッドシートの実際のシート名を作成（例：2603）
 target_sheet_name = f"{year_val[2:]}{month_val}"
-
-# 3. 週の選択
-week_map = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
-selected_week = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
-row_idx = week_map[selected_week]
 
 # データの読み込み
 df_raw = load_data_by_sheet_name(target_sheet_name)
 
 if not df_raw.empty:
+    # 各週の行番号をキーワード検索で特定する（これでズレを解消）
+    week_rows = {}
+    for w in ["W1", "W2", "W3", "W4", "W5", "W6"]:
+        r = find_row_by_keyword(df_raw, w)
+        if r: week_rows[w] = r
+
+    selected_week = st.sidebar.selectbox("表示週を選択", list(week_rows.keys()))
+    row_idx = week_rows[selected_week]
+
     st.title(f"ストアカルテ {year_val}年{month_val}月")
 
     # --- 1. All Stores ---
@@ -101,7 +102,7 @@ if not df_raw.empty:
 
     # --- 2. WEEKサマリー ---
     w_rows = ""
-    for w_name, r_idx in week_map.items():
+    for w_name, r_idx in week_rows.items():
         wa, wt, wb, wl = get_score(df_raw, r_idx, 6), get_score(df_raw, r_idx, 7), get_score(df_raw, r_idx, 10), get_score(df_raw, r_idx, 13)
         w_rows += f'<tr><td>{w_name}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num(wa-wt, wa>=wt)}</td><td>{fmt_ratio(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num(wa-wb, wa>=wb)}</td><td>{fmt_ratio(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     
@@ -133,4 +134,4 @@ if not df_raw.empty:
     st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
 else:
-    st.error(f"シート「{target_sheet_name}」が見つかりませんでした。スプレッドシートのタブ名が半角数字4桁（例：2603）になっているか確認してください。")
+    st.error(f"シート「{target_sheet_name}」が見つかりませんでした。スプレッドシートのタブ名が「2603」のような形式になっているか確認してください。")
