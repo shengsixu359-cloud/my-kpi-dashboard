@@ -29,30 +29,29 @@ def load_data_by_name(sheet_name):
         url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         response = requests.get(url)
         if response.status_code == 200:
-            df = pd.read_csv(io.StringIO(response.text), header=None)
+            # カラム名を一旦持たず、ピュアな行列データとして読み込む
+            df = pd.read_csv(io.StringIO(response.text), header=None, dtype=str)
             return df, None
         else:
-            return None, f"アクセス失敗: {response.status_code}"
+            return None, f"HTTP Error: {response.status_code}"
     except Exception as e:
         return None, str(e)
 
-def get_val(df, row_idx, col_idx):
+def force_num(val):
+    """どんな値が来ても数値に変換を試みる（最も強力な変換器）"""
+    if pd.isna(val): return 0.0
     try:
-        if row_idx is None or row_idx <= 0: return 0
-        val = df.iloc[row_idx-1, col_idx-1]
-        if pd.isna(val): return 0
+        # 不要な文字を徹底排除
         s = str(val).replace(',','').replace('%','').replace('¥','').replace('円','').replace(' ','').strip()
-        return pd.to_numeric(s, errors='coerce') or 0
+        if s == "" or s == "-": return 0.0
+        return float(s)
     except:
-        return 0
+        return 0.0
 
 def find_row(df, keyword):
+    """シート内を検索して行番号を特定"""
     try:
-        # A列(index 0)を最優先で探す
-        for i, val in enumerate(df[0]):
-            if keyword in str(val):
-                return i + 1
-        # A列になければ全セルを探す
+        # 全セルをスキャン
         for i, row in df.iterrows():
             if any(keyword in str(cell) for cell in row):
                 return i + 1
@@ -77,10 +76,14 @@ if df_raw is not None:
     st.title(f"ストアカルテ {y_val}年{m_val}月")
 
     # --- 1. All Stores ---
-    actual_sum = sum([get_val(df_raw, i, 6) for i in range(12, 54)])
-    g3_t = get_val(df_raw, 3, 7)
-    i3_b = get_val(df_raw, 3, 9)
-    k3_l = get_val(df_raw, 3, 11)
+    # F12:F53 (12行目から53行目) 合計
+    actual_sum = 0
+    for i in range(12, 54):
+        actual_sum += force_num(df_raw.iloc[i-1, 5]) # 6列目(F)
+
+    g3_t = force_num(df_raw.iloc[2, 6]) # 3行7列(G3)
+    i3_b = force_num(df_raw.iloc[2, 8]) # 3行9列(I3)
+    k3_l = force_num(df_raw.iloc[2, 10]) # 3行11列(K3)
 
     all_html = f'''
     <table class="base-table">
@@ -100,22 +103,30 @@ if df_raw is not None:
     # --- 2. WEEKサマリー ---
     w_rows_html = ""
     for w, r in w_rows.items():
-        wa = get_val(df_raw, r, 6)
-        wt, wb, wl = get_val(df_raw, r, 7), get_val(df_raw, r, 10), get_val(df_raw, r, 13)
+        wa = force_num(df_raw.iloc[r-1, 5]) # F列
+        wt = force_num(df_raw.iloc[r-1, 6]) # G列
+        wb = force_num(df_raw.iloc[r-1, 9]) # J列
+        wl = force_num(df_raw.iloc[r-1, 12]) # M列
         if wa != 0 or wt != 0:
             w_rows_html += f'<tr><td>{w}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td><span class="{"reach" if wa>=wt else "unmet"}">{abs(wa-wt):,.0f}</span></td><td><span class="{"reach" if wa>=wt else "unmet"}">{wa/wt*100 if wt else 0:.1f}%</span></td><td>{wb:,.0f}</td><td><span class="{"reach" if wa>=wb else "unmet"}">{abs(wa-wb):,.0f}</span></td><td><span class="{"reach" if wa>=wb else "unmet"}">{wa/wb*100 if wb else 0:.1f}%</span></td><td>{wl:,.0f}</td><td><span class="{"reach" if wa>=wl else "unmet"}">{wa/wl*100 if wl else 0:.1f}%</span></td></tr>'
     st.markdown(f'<h4>WEEKサマリー</h4><table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows_html}</table>', unsafe_allow_html=True)
 
     # --- 3. 受注実績詳細 ---
-    da, dt, dr = get_val(df_raw, row_idx, 6), get_val(df_raw, row_idx, 7), get_val(df_raw, row_idx, 9)
-    dl, dlr = get_val(df_raw, row_idx, 13), get_val(df_raw, row_idx, 14)
+    da = force_num(df_raw.iloc[row_idx-1, 5]) # F
+    dt = force_num(df_raw.iloc[row_idx-1, 6]) # G
+    dr = force_num(df_raw.iloc[row_idx-1, 8]) # I
+    dl = force_num(df_raw.iloc[row_idx-1, 12]) # M
+    dlr = force_num(df_raw.iloc[row_idx-1, 13]) # N
     st.markdown(f'<h4>受注実績 {sel_w}</h4><table class="base-table kpi-table"><tr><th>受注実績</th><th>目標</th><th>目標比</th><th>差額</th></tr><tr><td rowspan="3" style="font-size:1.5em;font-weight:bold;">¥{da:,.0f}</td><td>¥{dt:,.0f}</td><td><span class="{"reach" if dr>=100 else "unmet"}">{dr:.1f}%</span></td><td><span class="{"reach" if da>=dt else "unmet"}">{abs(da-dt):,.0f}</span></td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{dl:,.0f}</td><td><span class="{"reach" if dlr>=100 else "unmet"}">{dlr:.1f}%</span></td><td><span class="{"reach" if da>=dl else "unmet"}">{abs(da-dl):,.0f}</span></td></tr></table>', unsafe_allow_html=True)
 
     # --- 4. KPI別 ---
+    # 列番号: 座(AR=44, AV=48, AZ=52), 単(AU=47, AY=51, BC=55), CVR(AS=45, AW=49, BA=53), 数(AT=46, AX=50, BB=54)
     k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
     k_rows_html = ""
     for k, (ac, tc, lc) in k_map.items():
-        av, tv, lv = get_val(df_raw, row_idx, ac), get_val(df_raw, row_idx, tc), get_val(df_raw, row_idx, lc)
+        av = force_num(df_raw.iloc[row_idx-1, ac-1])
+        tv = force_num(df_raw.iloc[row_idx-1, tc-1])
+        lv = force_num(df_raw.iloc[row_idx-1, lc-1])
         tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
         u = "¥" if k=="客単価" else ""
         fmt_t = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
@@ -125,4 +136,3 @@ if df_raw is not None:
 
 else:
     st.error(f"シート「{target_sheet}」を読み込めませんでした。")
-    st.info("タブ名が「2503」のような数字4桁であることを確認してください。")
