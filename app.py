@@ -5,8 +5,8 @@ import pandas as pd
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# スタイルの定義（一行にまとめてエスケープを防止）
-style_html = '<style>html, body, [class*="css"] { font-family: "Meiryo", "MS PGothic", sans-serif; } .reach { color: #1f77b4; font-weight: bold; } .unmet { color: #d62728; } .kpi-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px; } .kpi-table th { background-color: #444; color: white; padding: 10px; text-align: center; border: 1px solid #ddd; } .kpi-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }</style>'
+# スタイルの定義
+style_html = '<style>html, body, [class*="css"] { font-family: "Meiryo", "MS PGothic", sans-serif; } .reach { color: #1f77b4; font-weight: bold; } .unmet { color: #d62728; } .eval-mark { font-weight: bold; font-size: 1.2em; display: inline-block; width: 1.5em; text-align: center; } .kpi-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px; } .kpi-table th { background-color: #444; color: white; padding: 10px; text-align: center; border: 1px solid #ddd; } .kpi-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }</style>'
 st.markdown(style_html, unsafe_allow_html=True)
 st.title("ストアカルテ2026年3月")
 
@@ -37,15 +37,22 @@ def col_to_num(col_str):
     return num
 
 def get_eval_mark(ratio):
-    if ratio >= 100: return "◯"
-    elif ratio >= 90: return "△"
-    else: return "✕"
+    # シンプルな太字にするためのクラス付きスパンを返す
+    mark = "✕"
+    if ratio >= 100: mark = "◯"
+    elif ratio >= 90: mark = "△"
+    return f'<span class="eval-mark">{mark}</span>'
 
 def format_ratio_text(ratio):
     if ratio >= 100:
         return f'<span class="reach">{ratio:.1f}%</span>'
     else:
         return f'<span class="unmet">{ratio:.1f}%</span>'
+
+def diff_fmt(val):
+    if pd.isna(val) or val == 0: return "0"
+    sign = "+" if val > 0 else "▲"
+    return f"{sign}{abs(val):,.0f}"
 
 def num_fmt(val, unit=""):
     if pd.isna(val) or val == 0: return "-"
@@ -71,7 +78,8 @@ if not df_raw.empty:
     ly_r = get_score(df_raw, row_idx, col_to_num("N"))
     ly_diff = act_s - ly_s
 
-    sales_html = f'<h4>受注実績</h4><table class="kpi-table"><tr><th style="width: 25%;">受注実績</th><th style="width: 25%;">目標</th><th style="width: 25%;">目標比</th><th style="width: 25%;">差額</th></tr><tr><td rowspan="3" style="font-size: 1.5em; font-weight: bold;">¥{act_s:,.0f}</td><td>¥{tgt_s:,.0f}</td><td>{format_ratio_text(ratio_s)}</td><td>¥{diff_s:,.0f}</td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{ly_s:,.0f}</td><td>{format_ratio_text(ly_r)}</td><td>¥{ly_diff:,.0f}</td></tr></table>'
+    # タイトル横に期間を付け足し
+    sales_html = f'<h4>受注実績 {selected_week_label}</h4><table class="kpi-table"><tr><th style="width: 25%;">受注実績</th><th style="width: 25%;">目標</th><th style="width: 25%;">目標比</th><th style="width: 25%;">差額</th></tr><tr><td rowspan="3" style="font-size: 1.5em; font-weight: bold;">¥{act_s:,.0f}</td><td>¥{tgt_s:,.0f}</td><td>{format_ratio_text(ratio_s)}</td><td>{diff_fmt(diff_s)}</td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{ly_s:,.0f}</td><td>{format_ratio_text(ly_r)}</td><td>{diff_fmt(ly_diff)}</td></tr></table>'
     st.markdown(sales_html, unsafe_allow_html=True)
 
     # --- KPI別テーブル ---
