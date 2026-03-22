@@ -19,7 +19,7 @@ SHEETS = {
 @st.cache_data(ttl=60)
 def load_raw_df(gid):
     try:
-        # header=Noneで読み込むことで、セル位置(行列番号)で指定可能にする
+        # ヘッダーなしで読み込み、セル位置で指定可能にする
         return pd.read_csv(f"{BASE_URL}{gid}", header=None)
     except:
         return pd.DataFrame()
@@ -27,8 +27,11 @@ def load_raw_df(gid):
 def get_cell_value(df, row, col):
     """特定のセルの値を数値として取得 (Excel形式のA1→0,0に対応)"""
     try:
+        if df.empty: return 0
         val = df.iloc[row-1, col-1]
-        return pd.to_numeric(str(val).replace(',', '').replace('¥', ''), errors='coerce')
+        # カンマや円記号を除去して数値化
+        clean_val = str(val).replace(',', '').replace('¥', '').replace('円', '').strip()
+        return pd.to_numeric(clean_val, errors='coerce')
     except:
         return 0
 
@@ -38,10 +41,14 @@ try:
     raw_26 = load_raw_df(SHEETS["kpi_26"])
     raw_25 = load_raw_df(SHEETS["kpi_25"])
     
-    # マスターデータ（店舗リスト用）を整形
-    df_master = raw_master.copy()
-    df_master.columns = [str(c).strip() for c in df_master.iloc[0]]
-    df_master = df_master[1:]
+    # マスターデータの整形（店舗リスト用）
+    if not raw_master.empty:
+        df_master = raw_master.copy()
+        df_master.columns = [str(c).strip() for c in df_master.iloc[0]]
+        df_master = df_master[1:]
+    else:
+        st.error("マスターデータの読み込みに失敗しました。")
+        st.stop()
 
     # --- サイドバー：表示条件 ---
     st.sidebar.header("🔍 表示条件")
@@ -60,17 +67,16 @@ try:
     selected_store = st.sidebar.selectbox("店舗を選択", available_stores)
 
     # 3. 期間選択（プルダウン）
-    # ※シート④(202603)から月と週のリストを取得（場所は仮定）
-    selected_month = st.sidebar.selectbox("表示月を選択", ["2026/03"]) # 固定またはリスト取得
+    selected_month = st.sidebar.selectbox("表示月を選択", ["2026/03"])
     selected_week = st.sidebar.selectbox("表示週を選択", ["全週", "1W", "2W", "3W", "4W", "5W"])
 
     # --- TOP: 全体受注実績サマリー ---
-    st.markdown(f"### 🏆 全体受注実績サマリー ({selected_month})")
+    st.markdown(f"### 🏆 {selected_store} 受注実績サマリー ({selected_month})")
     
-    # ご指摘のセル位置から取得 (E3=行3,列5 / F3=行3,列6)
-    val_sales = get_cell_value(raw_26, 3, 5)  # E3: 受注金額
-    val_target = get_cell_value(raw_26, 3, 6) # F3: 目標
-    val_25 = get_cell_value(raw_25, 3, 5)     # 前年同時期のE3
+    # E3=3行5列, F3=3行6列
+    val_sales = get_cell_value(raw_26, 3, 5)  # E3
+    val_target = get_cell_value(raw_26, 3, 6) # F3
+    val_25 = get_cell_value(raw_25, 3, 5)     # 前年E3
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("受注実績", f"{val_sales:,.0f}円")
@@ -88,8 +94,8 @@ try:
     # --- KPI分析テーブル ---
     st.markdown("### 📈 指標別KPI分析")
     
-    # KPI項目と、それぞれの値がスプレッドシートのどのセルにあるか（仮定）
-    # ※もし位置がわかる場合は、(行, 列)を修正してください
+    # KPI項目のセル位置（必要に応じて数値を調整してください）
+    # (行, 列) の形式です
     kpi_map = {
         "座数": {"act": (5, 5), "tgt": (5, 6), "ly": (5, 7)},
         "客単価": {"act": (6, 5), "tgt": (6, 6), "ly": (6, 7)},
@@ -114,4 +120,4 @@ try:
     st.table(pd.DataFrame(kpi_results))
 
 except Exception as e:
-    st.error(f"データの抽出中にエラーが発生しました
+    st.error(f"エラーが発生しました: {e}")
