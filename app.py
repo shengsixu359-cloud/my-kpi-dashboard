@@ -5,20 +5,20 @@ import pandas as pd
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# メイリオフォントと条件付き書式の適用
-st.markdown("""
-    <style>
+# スタイルの定義
+style_html = """
+<style>
     html, body, [class*="css"] {
         font-family: "Meiryo", "MS PGothic", sans-serif;
     }
-    .reach { color: #1f77b4; font-weight: bold; } /* 達成: ブルー + 太字 */
-    .unmet { color: #d62728; } /* 未達: 赤字 */
-    th { background-color: #444 !important; color: white !important; padding: 10px; text-align: center; border: 1px solid #ddd; }
-    td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-    table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
-    </style>
-    """, unsafe_allow_html=True)
-
+    .reach { color: #1f77b4; font-weight: bold; }
+    .unmet { color: #d62728; }
+    .kpi-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; margin-bottom: 20px; }
+    .kpi-table th { background-color: #444; color: white; padding: 10px; text-align: center; border: 1px solid #ddd; }
+    .kpi-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+</style>
+"""
+st.markdown(style_html, unsafe_allow_html=True)
 st.title("ストアカルテ2026年3月")
 
 # 2. データ取得設定
@@ -30,13 +30,11 @@ def load_raw_data():
     try:
         url = f"{BASE_URL}{SHEET_GID}"
         return pd.read_csv(url, header=None)
-    except Exception as e:
-        st.error(f"データの読み込みに失敗しました: {e}")
+    except:
         return pd.DataFrame()
 
 def get_score(df, row_idx, col_idx):
     try:
-        if df.empty: return 0
         val = df.iloc[row_idx-1, col_idx-1]
         clean_val = str(val).replace(',', '').replace('%', '').replace('¥', '').replace('円', '').strip()
         return pd.to_numeric(clean_val, errors='coerce')
@@ -54,7 +52,8 @@ def get_eval_mark(ratio):
     elif ratio >= 90: return "△"
     else: return "✕"
 
-def format_ratio_html(ratio):
+def format_ratio_text(ratio):
+    # HTMLタグを含めた文字列を返す
     if ratio >= 100:
         return f'<span class="reach">{ratio:.1f}%</span>'
     else:
@@ -62,12 +61,8 @@ def format_ratio_html(ratio):
 
 def num_fmt(val, unit=""):
     if pd.isna(val) or val == 0: return "-"
-    if val >= 100:
-        return f"{unit}{val:,.0f}"
-    else:
-        return f"{unit}{val:.2f}"
+    return f"{unit}{val:,.0f}" if val >= 100 else f"{unit}{val:.2f}"
 
-# --- メイン処理 ---
 df_raw = load_raw_data()
 
 if not df_raw.empty:
@@ -79,9 +74,7 @@ if not df_raw.empty:
     selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_week_label]
 
-    # --- 受注実績セクション ---
-    st.markdown("#### 受注実績")
-    
+    # --- 受注実績テーブル生成 ---
     act_s = get_score(df_raw, row_idx, col_to_num("F"))
     tgt_s = get_score(df_raw, row_idx, col_to_num("G"))
     ratio_s = get_score(df_raw, row_idx, col_to_num("I"))
@@ -90,8 +83,9 @@ if not df_raw.empty:
     ly_r = get_score(df_raw, row_idx, col_to_num("N"))
     ly_diff = act_s - ly_s
 
-    sales_table = f"""
-    <table>
+    sales_html = f"""
+    <h4>受注実績</h4>
+    <table class="kpi-table">
         <tr>
             <th style="width: 25%;">受注実績</th>
             <th style="width: 25%;">目標</th>
@@ -101,7 +95,7 @@ if not df_raw.empty:
         <tr>
             <td rowspan="3" style="font-size: 1.5em; font-weight: bold;">¥{act_s:,.0f}</td>
             <td>¥{tgt_s:,.0f}</td>
-            <td>{format_ratio_html(ratio_s)}</td>
+            <td>{format_ratio_text(ratio_s)}</td>
             <td>¥{diff_s:,.0f}</td>
         </tr>
         <tr>
@@ -111,17 +105,14 @@ if not df_raw.empty:
         </tr>
         <tr>
             <td>¥{ly_s:,.0f}</td>
-            <td>{format_ratio_html(ly_r)}</td>
+            <td>{format_ratio_text(ly_r)}</td>
             <td>¥{ly_diff:,.0f}</td>
         </tr>
     </table>
     """
-    st.markdown(sales_table, unsafe_allow_html=True)
-    st.write("")
+    st.markdown(sales_html, unsafe_allow_html=True)
 
-    # --- KPI別セクション ---
-    st.markdown("#### KPI別")
-    
+    # --- KPI別テーブル生成 ---
     kpi_cols = {
         "座数":   {"act": "AR", "tgt": "AV", "ly": "AZ"},
         "客単価": {"act": "AU", "tgt": "AY", "ly": "BC"},
@@ -129,33 +120,29 @@ if not df_raw.empty:
         "客数":   {"act": "AT", "tgt": "AX", "ly": "BB"},
     }
 
-    # 各行のHTMLを生成
-    rows_content = ""
+    rows_html = ""
     for item, cols in kpi_cols.items():
         a = get_score(df_raw, row_idx, col_to_num(cols["act"]))
         t = get_score(df_raw, row_idx, col_to_num(cols["tgt"]))
         ly = get_score(df_raw, row_idx, col_to_num(cols["ly"]))
-
         tr = (a / t * 100) if t else 0
         lr = (a / ly * 100) if ly else 0
-        
         unit = "¥" if item == "客単価" else ""
-        eval_mark = get_eval_mark(tr)
-
-        rows_content += f"""
+        
+        rows_html += f"""
         <tr>
-            <td>{eval_mark}</td>
+            <td>{get_eval_mark(tr)}</td>
             <td>{item}</td>
             <td>{num_fmt(t, unit)}</td>
             <td>{num_fmt(a, unit)}</td>
-            <td>{format_ratio_html(tr)}</td>
-            <td>{format_ratio_html(lr)}</td>
+            <td>{format_ratio_text(tr)}</td>
+            <td>{format_ratio_text(lr)}</td>
         </tr>
         """
 
-    # テーブル全体を一つのHTMLとして表示
-    full_kpi_table = f"""
-    <table>
+    full_kpi_html = f"""
+    <h4>KPI別</h4>
+    <table class="kpi-table">
         <tr>
             <th style="width: 80px;">評</th>
             <th>KPI</th>
@@ -164,10 +151,10 @@ if not df_raw.empty:
             <th>目標比</th>
             <th>LY比</th>
         </tr>
-        {rows_content}
+        {rows_html}
     </table>
     """
-    st.markdown(full_kpi_table, unsafe_allow_html=True)
+    st.markdown(full_kpi_html, unsafe_allow_html=True)
 
 else:
     st.warning("データを読み込めませんでした。")
