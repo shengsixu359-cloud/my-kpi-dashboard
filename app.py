@@ -5,12 +5,12 @@ import pandas as pd
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# スタイルの定義（青字・赤字のルールを強化）
+# スタイルの定義
 st.markdown('''
 <style>
     html,body,[class*="css"]{font-family:"Meiryo",sans-serif;}
-    .reach { color: #1f77b4; font-weight: bold; } /* 達成: ブルー */
-    .unmet { color: #d62728; } /* 未達: レッド */
+    .reach { color: #1f77b4; font-weight: bold; }
+    .unmet { color: #d62728; }
     .eval-mark { font-weight: bold; font-size: 1.2em; }
     .base-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85em; }
     .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
@@ -40,22 +40,30 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# ヘルパー関数: 達成状況に応じた色付きHTMLを返す
-def color_val(val, is_reached, is_percent=False):
+# --- 表示用ヘルパー関数群 (エラー防止策) ---
+
+def color_val(display_text, is_reached):
+    """テキストに色を付けて返すだけにする（計算はここではしない）"""
     cls = "reach" if is_reached else "unmet"
-    fmt = f"{val:,.1f}%" if is_percent else f"{val:,.0f}"
-    if not is_percent and "▲" in str(val): fmt = str(val) # 差額用
-    return f'<span class="{cls}">{fmt}</span>'
+    return f'<span class="{cls}">{display_text}</span>'
 
 def diff_fmt(val, is_reached):
+    """差額を「▲/+」付きの文字列にしてから色付けに渡す"""
     txt = f'{"▲" if val < 0 else "+"}{abs(val):,.0f}'
     return color_val(txt, is_reached)
 
+def ratio_fmt(val, is_reached):
+    """比率を「%」付きの文字列にしてから色付けに渡す"""
+    txt = f"{val:.1f}%"
+    return color_val(txt, is_reached)
+
 def num_fmt(val, is_reached, unit=""):
+    """実績などの数値を適切な桁数で色付け"""
     if val >= 100:
-        return color_val(f"{unit}{val:,.0f}", is_reached)
+        txt = f"{unit}{val:,.0f}"
     else:
-        return color_val(f"{unit}{val:.2f}", is_reached)
+        txt = f"{unit}{val:.2f}"
+    return color_val(txt, is_reached)
 
 df_raw = load_raw_data()
 
@@ -75,10 +83,10 @@ if not df_raw.empty:
     <table class="base-table">
         <tr><th>月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{g2_act:,.0f}</td></tr>
         <tr><th>月次目標</th><td>{g3_tgt:,.0f}</td><th>月次予算</th><td>{i3_bg:,.0f}</td><th>前年受注額</th><td>{k3_ly:,.0f}</td></tr>
-        <tr><th>目標比</th><td>{color_val(g2_act/g3_tgt*100, g2_act>=g3_tgt, True)}</td><th>予算比</th><td>{color_val(g2_act/i3_bg*100, g2_act>=i3_bg, True)}</td><th>前年比</th><td>{color_val(g2_act/k3_ly*100, g2_act>=k3_ly, True)}</td></tr>
+        <tr><th>目標比</th><td>{ratio_fmt(g2_act/g3_tgt*100 if g3_tgt else 0, g2_act>=g3_tgt)}</td><th>予算比</th><td>{ratio_fmt(g2_act/i3_bg*100 if i3_bg else 0, g2_act>=i3_bg)}</td><th>前年比</th><td>{ratio_fmt(g2_act/k3_ly*100 if k3_ly else 0, g2_act>=k3_ly)}</td></tr>
         <tr><th>差額</th><td>{diff_fmt(g2_act-g3_tgt, g2_act>=g3_tgt)}</td><th>差額</th><td>{diff_fmt(g2_act-i3_bg, g2_act>=i3_bg)}</td><th>差額</th><td>{diff_fmt(g2_act-k3_ly, g2_act>=k3_ly)}</td></tr>
         <tr><th>MTD目標</th><td>{g6_mtd_t:,.0f}</td><th>MTD予算</th><td>{i6_mtd_b:,.0f}</td><th>MTD前年</th><td>{k6_mtd_l:,.0f}</td></tr>
-        <tr><th>MTD目標 %</th><td>{color_val(g2_act/g6_mtd_t*100, g2_act>=g6_mtd_t, True)}</td><th>MTD予算 %</th><td>{color_val(g2_act/i6_mtd_b*100, g2_act>=i6_mtd_b, True)}</td><th>MTD前年 %</th><td>{color_val(g2_act/k6_mtd_l*100, g2_act>=k6_mtd_l, True)}</td></tr>
+        <tr><th>MTD目標 %</th><td>{ratio_fmt(g2_act/g6_mtd_t*100 if g6_mtd_t else 0, g2_act>=g6_mtd_t)}</td><th>MTD予算 %</th><td>{ratio_fmt(g2_act/i6_mtd_b*100 if i6_mtd_b else 0, g2_act>=i6_mtd_b)}</td><th>MTD前年 %</th><td>{ratio_fmt(g2_act/k6_mtd_l*100 if k6_mtd_l else 0, g2_act>=k6_mtd_l)}</td></tr>
         <tr><th>MTD目標 差額</th><td>{diff_fmt(g2_act-g6_mtd_t, g2_act>=g6_mtd_t)}</td><th>MTD予算 差額</th><td>{diff_fmt(g2_act-i6_mtd_b, g2_act>=i6_mtd_b)}</td><th>MTD前年 差額</th><td>{diff_fmt(g2_act-k6_mtd_l, g2_act>=k6_mtd_l)}</td></tr>
     </table>
     '''
@@ -88,7 +96,7 @@ if not df_raw.empty:
     w_rows = ""
     for w_name, r_idx in week_map.items():
         wa, wt, wb, wl = get_score(df_raw, r_idx, 6), get_score(df_raw, r_idx, 7), get_score(df_raw, r_idx, 10), get_score(df_raw, r_idx, 13)
-        w_rows += f'<tr><td>{w_name.split()[0]}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{diff_fmt(wa-wt, wa>=wt)}</td><td>{color_val(wa/wt*100 if wt else 0, wa>=wt, True)}</td><td>{wb:,.0f}</td><td>{diff_fmt(wa-wb, wa>=wb)}</td><td>{color_val(wa/wb*100 if wb else 0, wa>=wb, True)}</td><td>{wl:,.0f}</td><td>{color_val(wa/wl*100 if wl else 0, wa>=wl, True)}</td></tr>'
+        w_rows += f'<tr><td>{w_name.split()[0]}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{diff_fmt(wa-wt, wa>=wt)}</td><td>{ratio_fmt(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{diff_fmt(wa-wb, wa>=wb)}</td><td>{ratio_fmt(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{ratio_fmt(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
@@ -97,7 +105,7 @@ if not df_raw.empty:
     da, dt, dr = get_score(df_raw, row_idx, 6), get_score(df_raw, row_idx, 7), get_score(df_raw, row_idx, 9)
     dl, dlr = get_score(df_raw, row_idx, 13), get_score(df_raw, row_idx, 14)
     st.markdown(f"<h4>受注実績 {selected_label}</h4>", unsafe_allow_html=True)
-    st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:25%;">受注実績</th><th style="width:25%;">目標</th><th style="width:25%;">目標比</th><th style="width:25%;">差額</th></tr><tr><td rowspan="3" style="font-size:1.5em;font-weight:bold;">¥{da:,.0f}</td><td>¥{dt:,.0f}</td><td>{color_val(dr, dr>=100, True)}</td><td>{diff_fmt(da-dt, da>=dt)}</td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{dl:,.0f}</td><td>{color_val(dlr, dlr>=100, True)}</td><td>{diff_fmt(da-dl, da>=dl)}</td></tr></table>', unsafe_allow_html=True)
+    st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:25%;">受注実績</th><th style="width:25%;">目標</th><th style="width:25%;">目標比</th><th style="width:25%;">差額</th></tr><tr><td rowspan="3" style="font-size:1.5em;font-weight:bold;">¥{da:,.0f}</td><td>¥{dt:,.0f}</td><td>{ratio_fmt(dr, dr>=100)}</td><td>{diff_fmt(da-dt, da>=dt)}</td></tr><tr><th>LY</th><th>LY比</th><th>差額</th></tr><tr><td>¥{dl:,.0f}</td><td>{ratio_fmt(dlr, dlr>=100)}</td><td>{diff_fmt(da-dl, da>=dl)}</td></tr></table>', unsafe_allow_html=True)
 
     # --- 4. KPI別 ---
     k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
@@ -109,7 +117,7 @@ if not df_raw.empty:
         lr = av/lv*100 if lv else 0
         u = "¥" if k=="客単価" else ""
         m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
-        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{tv:,.0f if tv>100 else tv:.2f}</td><td>{num_fmt(av, reached, u)}</td><td>{color_val(tr, tr>=100, True)}</td><td>{color_val(lr, lr>=100, True)}</td></tr>'
+        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{tv:,.0f if tv>100 else tv:.2f}</td><td>{num_fmt(av, reached, u)}</td><td>{ratio_fmt(tr, tr>=100)}</td><td>{ratio_fmt(lr, lr>=100)}</td></tr>'
     st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
