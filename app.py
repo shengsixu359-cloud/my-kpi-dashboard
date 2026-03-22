@@ -1,37 +1,44 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
+import requests
 
 # 1. ページ設定
-st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
+st.set_page_config(page_title="ストアカルテ・ダッシュボード", layout="wide")
 
-# スタイルの定義（縁を削除、フォント指定）
+# スタイルの定義
 st.markdown('''
 <style>
     html,body,[class*="css"]{font-family:"Meiryo",sans-serif;}
-    .reach { color: #1f77b4; font-weight: bold; } /* 達成: ブルー */
-    .unmet { color: #d62728; } /* 未達: レッド */
+    .reach { color: #1f77b4; font-weight: bold; }
+    .unmet { color: #d62728; }
     .eval-mark { font-weight: bold; font-size: 1.2em; }
     .base-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85em; }
     .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
     .base-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
     .kpi-table th { background-color: #444!important; color: white!important; padding: 10px; border: 1px solid #ddd; }
-    
-    /* 見出しから縁（border-left）を削除 */
     h4 { margin-top: 20px; margin-bottom: 10px; padding-left: 0; border-left: none; }
 </style>
 ''', unsafe_allow_html=True)
 
-st.title("ストアカルテ2026年3月")
+# 2. データ取得設定
+# スプレッドシートIDを固定
+SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
+BASE_EXPORT_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid="
 
-# 2. データ取得
-BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
-SHEET_GID = "1502960872"
+# シート名とGIDのマッピング（手動で主要なものを定義するか、自動取得も可能ですが、まずは確実なリストを定義します）
+# ※新しい月が増えたらここに追加、または全自動取得ロジックへ。
+SHEETS_DICT = {
+    "2026年": {"03月": "1502960872", "02月": "別のGID", "01月": "別のGID"},
+    "2025年": {"12月": "別のGID", "03月": "別のGID"},
+    "2024年": {"03月": "別のGID"}
+}
 
-@st.cache_data(ttl=60)
-def load_raw_data():
+# --- 補助関数 ---
+@st.cache_data(ttl=300)
+def load_data(gid):
     try:
-        return pd.read_csv(f"{BASE_URL}{SHEET_GID}", header=None)
+        return pd.read_csv(f"{BASE_EXPORT_URL}{gid}", header=None)
     except:
         return pd.DataFrame()
 
@@ -42,43 +49,46 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 表示用ヘルパー関数群 ---
-
 def color_text(text, is_reached):
-    """色付きのスパンを返す"""
     cls = "reach" if is_reached else "unmet"
     return f'<span class="{cls}">{text}</span>'
 
 def fmt_num(val, is_reached, unit="", is_bold=False):
-    """数値をカンマ区切りにし、色を付ける"""
-    if abs(val) >= 100:
-        txt = f"{unit}{abs(val):,.0f}"
-    else:
-        txt = f"{unit}{abs(val):.2f}"
-    
-    if is_bold:
-        txt = f"<b>{txt}</b>"
+    txt = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
+    if is_bold: txt = f"<b>{txt}</b>"
     return color_text(txt, is_reached)
 
 def fmt_ratio(val, is_reached):
-    """比率を%形式にして色を付ける"""
-    txt = f"{val:.1f}%"
-    return color_text(txt, is_reached)
+    return color_text(f"{val:.1f}%", is_reached)
 
-df_raw = load_raw_data()
+# --- サイドバー：期間選択（動的） ---
+st.sidebar.header("📅 期間選択")
+
+# 1. 年の選択
+selected_year = st.sidebar.selectbox("年を選択", list(SHEETS_DICT.keys()))
+
+# 2. 月の選択
+available_months = SHEETS_DICT[selected_year]
+selected_month_label = st.sidebar.selectbox("月を選択", list(available_months.keys()))
+current_gid = available_months[selected_month_label]
+
+# データ読み込み
+df_raw = load_data(current_gid)
 
 if not df_raw.empty:
-    st.sidebar.header("期間選択")
-    week_map = {"W1 (3/1)": 57, "W2 (3/2-3/8)": 58, "W3 (3/9-3/15)": 59, "W4 (3/16-3/22)": 60, "W5 (3/23-3/29)": 61, "W6 (3/30-3/31)": 62}
-    selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
-    row_idx = week_map[selected_label]
+    # 3. 週の選択
+    week_map = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
+    selected_week = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
+    row_idx = week_map[selected_week]
+
+    st.title(f"ストアカルテ {selected_year}{selected_month_label}")
 
     # --- 1. All Stores ---
+    # 月次受注額 (F12:F53合計)
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     g6_mtd_t, i6_mtd_b, k6_mtd_l = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
 
-    # 見出しから緑の縁が消えます
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
     all_html = f'''
     <table class="base-table">
@@ -97,15 +107,15 @@ if not df_raw.empty:
     w_rows = ""
     for w_name, r_idx in week_map.items():
         wa, wt, wb, wl = get_score(df_raw, r_idx, 6), get_score(df_raw, r_idx, 7), get_score(df_raw, r_idx, 10), get_score(df_raw, r_idx, 13)
-        w_rows += f'<tr><td>{w_name.split()[0]}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num(wa-wt, wa>=wt)}</td><td>{fmt_ratio(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num(wa-wb, wa>=wb)}</td><td>{fmt_ratio(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
+        w_rows += f'<tr><td>{w_name}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num(wa-wt, wa>=wt)}</td><td>{fmt_ratio(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num(wa-wb, wa>=wb)}</td><td>{fmt_ratio(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
 
-    # --- 3. 受注実績詳細 (選択週) ---
+    # --- 3. 受注実績詳細 ---
     da, dt, dr = get_score(df_raw, row_idx, 6), get_score(df_raw, row_idx, 7), get_score(df_raw, row_idx, 9)
     dl, dlr = get_score(df_raw, row_idx, 13), get_score(df_raw, row_idx, 14)
-    st.markdown(f"<h4>受注実績 {selected_label}</h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4>受注実績 {selected_week}</h4>", unsafe_allow_html=True)
     st.markdown(f'''
     <table class="base-table kpi-table">
         <tr><th style="width:25%;">受注実績</th><th style="width:25%;">目標</th><th style="width:25%;">目標比</th><th style="width:25%;">差額</th></tr>
@@ -121,18 +131,10 @@ if not df_raw.empty:
     for k, (ac, tc, lc) in k_map.items():
         av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
         reached = av >= tv
-        tr = av/tv*100 if tv else 0
-        lr = av/lv*100 if lv else 0
-        u = "¥" if k=="客単価" else ""
-        m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
-        
-        fmt_target = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        fmt_actual = fmt_num(av, reached, u)
-        
-        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{fmt_target}</td><td>{fmt_actual}</td><td>{fmt_ratio(tr, tr>=100)}</td><td>{fmt_ratio(lr, lr>=100)}</td></tr>'
+        k_rows += f'<tr><td><span class="eval-mark">{"◯" if av>=tv else "△" if av/tv*100>=90 else "✕"}</span></td><td>{k}</td><td>{f"¥{tv:,.0f}" if k=="客単価" else f"{tv:,.0f}" if tv>=100 else f"{tv:.2f}"}</td><td>{fmt_num(av, reached, "¥" if k=="客単価" else "")}</td><td>{fmt_ratio(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_ratio(av/lv*100 if lv else 0, av>=lv)}</td></tr>'
     
     st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
 else:
-    st.warning("データを読み込めませんでした。")
+    st.warning("この月のデータが見つかりません。GIDの設定を確認してください。")
