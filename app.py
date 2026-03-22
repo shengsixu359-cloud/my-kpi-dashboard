@@ -3,114 +3,130 @@ import streamlit as st
 import pandas as pd
 
 # 1. ページ設定
-st.set_page_config(page_title="店舗KPI分析レポート", layout="wide")
-st.title("📊 店舗KPI分析レポート")
+st.set_page_config(page_title="週次KPIダッシュボード", layout="wide")
+st.title("📊 週次KPIダッシュボード (2026年3月)")
 
-# 2. データ取得設定
-BASE_URL = "https://docs.google.com/spreadsheets/d/1iwGSIWU8aEoW82hzZCI6YO8VufhAc3zR8KnS4OPPMQA/export?format=csv&gid="
-SHEETS = {
-    "master": "1673023787",  # ② 店舗データ
-    "kpi_26": "0",           # ④ 202603
-    "kpi_25": "12345678"     # ⑤ 202503 (前年)
-}
+# 2. データ取得設定 (新しいURLとGID)
+# 末尾を /export?format=csv&gid= に書き換えてCSVとして読み込みます
+BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
+SHEET_GID = "1502960872" # 「2603」タブのGID
 
-@st.cache_data(ttl=60)
-def load_raw_df(gid):
+@st.cache_data(ttl=60) # 1分間キャッシュ
+def load_raw_data():
     try:
-        # ヘッダーなしで読み込み、行列番号(0始まり)で制御
-        return pd.read_csv(f"{BASE_URL}{gid}", header=None)
-    except:
+        # ヘッダーなし(header=None)で読み込み、セル位置(行列番号)で指定可能にする
+        url = f"{BASE_URL}{SHEET_GID}"
+        df = pd.read_csv(url, header=None)
+        return df
+    except Exception as e:
+        st.error(f"データの読み込みに失敗しました: {e}")
         return pd.DataFrame()
 
-def get_val(df, row_idx, col_idx):
-    """行列インデックスから数値を安全に取得"""
+def get_score(df, row_idx, col_idx):
+    """Excelの行列番号(A1=1,1)から、pandasのインデックス(0,0)に変換して数値を取得"""
     try:
         if df.empty: return 0
-        val = df.iloc[row_idx, col_idx]
-        clean_val = str(val).replace(',', '').replace('¥', '').replace('円', '').strip()
+        # pandasは0始まりのため、行と列から1を引く
+        val = df.iloc[row_idx-1, col_idx-1]
+        # 文字列を数値に変換（カンマや%を除去）
+        clean_val = str(val).replace(',', '').replace('%', '').replace('¥', '').strip()
         return pd.to_numeric(clean_val, errors='coerce')
     except:
         return 0
 
-try:
-    # データの読み込み
-    raw_master = load_raw_df(SHEETS["master"])
-    raw_26 = load_raw_df(SHEETS["kpi_26"])
-    raw_25 = load_raw_df(SHEETS["kpi_25"])
+# 列名(A, B, C...)を数字(1, 2, 3...)に変換する補助関数
+def col_to_num(col_str):
+    num = 0
+    for c in col_str.upper():
+        num = num * 26 + (ord(c) - ord('A') + 1)
+    return num
 
-    if raw_master.empty:
-        st.error("データの読み込みに失敗しました。共有設定を確認してください。")
-        st.stop()
+# --- メイン処理 ---
+df_raw = load_raw_data()
 
-    # --- サイドバー：条件設定 ---
-    st.sidebar.header("🔍 表示条件")
-
-    # 1. エリア担当者 (E列 = index 4)
-    master_body = raw_master.iloc[1:].copy()
-    handler_list = sorted(master_body[4].dropna().unique())
-    selected_handler = st.sidebar.selectbox("エリア担当者を選択", handler_list)
-
-    # 2. 店舗選択 (C列 = index 2)
-    stores_filtered = master_body[master_body[4] == selected_handler]
-    store_list = stores_filtered[2].unique()
-    selected_store = st.sidebar.selectbox("店舗を選択", store_list)
-
-    # 3. 表示週を選択 (月曜始まり定義)
-    # G列=6, H列=7... と実績が並んでいる想定
-    week_options = {
-        "全期間": None,
-        "W1 (3/1)": 6,          # G列
-        "W2 (3/2 - 3/8)": 7,    # H列
-        "W3 (3/9 - 3/15)": 8,   # I列
-        "W4 (3/16 - 3/22)": 9,  # J列
-        "W5 (3/23 - 3/29)": 10, # K列
-        "W6 (3/30 - 3/31)": 11  # L列
+if not df_raw.empty:
+    # --- サイドバー：週選択 ---
+    st.sidebar.header("📅 期間選択")
+    # A57～A62にあるW1～W6を選択肢にする
+    week_map = {
+        "W1 (3/1)": 57,
+        "W2 (3/2-3/8)": 58,
+        "W3 (3/9-3/15)": 59,
+        "W4 (3/16-3/22)": 60,
+        "W5 (3/23-3/29)": 61,
+        "W6 (3/30-3/31)": 62
     }
-    selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_options.keys()))
-    target_col_idx = week_options[selected_week_label]
+    selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
+    row_idx = week_map[selected_week_label] # 選択された週の行番号(Excel形式)
 
-    # --- 店舗の行を検索 ---
-    # C列(index 2)から選択された店舗名の行を探す
-    store_row_idx = None
-    for idx, row in raw_26.iterrows():
-        if str(row[2]).strip() == str(selected_store).strip():
-            store_row_idx = idx
-            break
+    st.subheader(f"🗃️ {selected_week_label} 受注・KPIレポート")
 
-    # --- メイン表示エリア ---
-    st.subheader(f"📍 {selected_store} 分析レポート")
+    # --- ① 受注実績サマリー (ご指定のセル位置から抽出) ---
+    st.markdown("#### 🏆 受注実績")
+    
+    # 本年実績
+    act_sales = get_score(df_raw, row_idx, col_to_num("F")) # F列:受注実績
+    tgt_sales = get_score(df_raw, row_idx, col_to_num("G")) # G列:受注目標
+    diff_sales = get_score(df_raw, row_idx, col_to_num("H")) # H列:差額
+    ratio_sales = get_score(df_raw, row_idx, col_to_num("I")) # I列:受注目標比(%)
 
-    if store_row_idx is not None:
-        # 目標値 (F列 = index 5)
-        val_target = get_val(raw_26, store_row_idx, 5)
-        
-        # 実績値 (G列以降)
-        if target_col_idx is None:
-            # 全期間：G列(6)からL列(11)までを合計
-            val_actual = sum([get_val(raw_26, store_row_idx, c) for c in range(6, 12)])
-            val_ly = sum([get_val(raw_25, store_row_idx, c) for c in range(6, 12)])
-        else:
-            # 特定の週
-            val_actual = get_val(raw_26, store_row_idx, target_col_idx)
-            val_ly = get_val(raw_25, store_row_idx, target_col_idx)
+    # 前年比較
+    ly_sales = get_score(df_raw, row_idx, col_to_num("M")) # M列:前年実績
+    ly_ratio = get_score(df_raw, row_idx, col_to_num("N")) # N列:前年比(%)
+    # ご指示通り「F列 - M列」で計算
+    ly_diff = act_sales - ly_sales
 
-        # --- サマリー表示 ---
-        st.markdown("### 🏆 受注実績サマリー")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("受注金額(実績)", f"{val_actual:,.0f}円")
-        c2.metric("目標", f"{val_target:,.0f}円" if target_col_idx is None else "-")
-        c3.metric("目標比", f"{(val_actual/val_target*100):.1f}%" if val_target and target_col_idx is None else "-")
-        c4.metric("目標差額", f"{(val_actual - val_target):,.0f}円" if val_target and target_col_idx is None else "-")
+    # メトリック表示 (本年)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("受注実績", f"{act_sales:,.0f}円")
+    c2.metric("受注目標", f"{tgt_sales:,.0f}円")
+    c3.metric("目標比", f"{ratio_sales:.1f}%", delta=f"{diff_sales:,.0f}円")
+    c4.empty()
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("前年実績", f"{val_ly:,.0f}円")
-        c2.metric("前年比", f"{(val_actual/val_ly*100):.1f}%" if val_ly else "-")
-        c3.metric("前年差額", f"{(val_actual - val_ly):,.0f}円")
+    # メトリック表示 (前年比較)
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("前年実績", f"{ly_sales:,.0f}円")
+    c6.metric("前年比", f"{ly_ratio:.1f}%", delta=f"{ly_diff:,.0f}円")
+    c7.empty()
+    c8.empty()
 
-        st.divider()
-        st.info(f"※{selected_week_label} のデータを表示中。目標は月間合計値です。")
-    else:
-        st.warning(f"店舗『{selected_store}』のデータが「202603」シート内に見つかりません。")
+    st.divider()
 
-except Exception as e:
-    st.error(f"システムエラーが発生しました: {e}")
+    # --- ② KPI別実績 (ご指定のセル位置から抽出) ---
+    st.markdown("#### 📈 指標別KPI分析")
+    
+    kpi_data = []
+    # 各KPIの列定義 (本年, 目標, 前年)
+    kpi_cols = {
+        "座数":   {"act": "AR", "tgt": "AV", "ly": "AZ"},
+        "客単価": {"act": "AU", "tgt": "AY", "ly": "BC"},
+        "CVR":    {"act": "AS", "tgt": "AW", "ly": "BA"},
+        "客数":   {"act": "AT", "tgt": "AX", "ly": "BB"},
+    }
+
+    for item, cols in kpi_cols.items():
+        act_val = get_score(df_raw, row_idx, col_to_num(cols["act"]))
+        tgt_val = get_score(df_raw, row_idx, col_to_num(cols["tgt"]))
+        ly_val = get_score(df_raw, row_idx, col_to_num(cols["ly"]))
+
+        # 比率計算
+        tgt_ratio = (act_val / tgt_val * 100) if tgt_val else 0
+        ly_ratio = (act_val / ly_val * 100) if ly_val else 0
+
+        # テーブル表示用に整形
+        kpi_data.append({
+            "KPI指標": item,
+            "本年実績": f"{act_val:,.0f}" if act_val > 100 else f"{act_val:.2f}",
+            "本年目標": f"{tgt_val:,.0f}" if tgt_val > 100 else f"{tgt_val:.2f}",
+            "目標比": f"{tgt_ratio:.1f}%",
+            "前年実績": f"{ly_val:,.0f}" if ly_val > 100 else f"{ly_val:.2f}",
+            "前年比": f"{ly_ratio:.1f}%"
+        })
+
+    # テーブルとして表示
+    st.table(pd.DataFrame(kpi_data))
+
+    st.info(f"※{selected_week_label} のデータをスプレッドシートの {row_idx} 行目から抽出しています。")
+
+else:
+    st.warning("スプレッドシートからデータを読み込めませんでした。URLと共有設定を確認してください。")
