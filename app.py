@@ -5,7 +5,7 @@ import pandas as pd
 # 1. ページ設定
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# メイリオフォントの適用と色のスタイル定義
+# メイリオフォントと条件付き書式、テーブルデザインの適用
 st.markdown("""
     <style>
     html, body, [class*="css"] {
@@ -13,6 +13,7 @@ st.markdown("""
     }
     .reach { color: #1f77b4; font-weight: bold; } /* 達成: ブルー + 太字 */
     .unmet { color: #d62728; } /* 未達: 赤字 */
+    th { background-color: #444 !important; color: white !important; } /* 表の見出しを黒っぽく */
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,14 +47,18 @@ def col_to_num(col_str):
         num = num * 26 + (ord(c) - ord('A') + 1)
     return num
 
-# 数値の書式設定（達成なら太字にするHTMLを返す）
-def format_ratio_html(ratio, is_table=False):
+# 評価記号の判定
+def get_eval_mark(ratio):
+    if ratio >= 100: return "◯"
+    elif ratio >= 90: return "△"
+    else: return "✕"
+
+# 数値の書式設定（HTML）
+def format_ratio_html(ratio):
     if ratio >= 100:
-        color = "#1f77b4" # ブルー
-        return f'<span style="color:{color}; font-weight:bold;">{ratio:.1f}%</span>'
+        return f'<span class="reach">{ratio:.1f}%</span>'
     else:
-        color = "#d62728" # 赤
-        return f'<span style="color:{color};">{ratio:.1f}%</span>'
+        return f'<span class="unmet">{ratio:.1f}%</span>'
 
 # --- メイン処理 ---
 df_raw = load_raw_data()
@@ -67,32 +72,47 @@ if not df_raw.empty:
     selected_week_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_week_label]
 
-    st.subheader(f"{selected_week_label} 受注・KPIレポート")
-
-    # --- 受注実績サマリー ---
+    # --- 受注実績セクション（表形式に変更） ---
     st.markdown("#### 受注実績")
     
-    act_s = get_score(df_raw, row_idx, col_to_num("F"))
-    tgt_s = get_score(df_raw, row_idx, col_to_num("G"))
-    diff_s = get_score(df_raw, row_idx, col_to_num("H"))
-    ratio_s = get_score(df_raw, row_idx, col_to_num("I"))
-    ly_s = get_score(df_raw, row_idx, col_to_num("M"))
-    ly_r = get_score(df_raw, row_idx, col_to_num("N"))
-    ly_diff = act_s - ly_s
+    act_s = get_score(df_raw, row_idx, col_to_num("F")) # 受注実績
+    tgt_s = get_score(df_raw, row_idx, col_to_num("G")) # 目標
+    ratio_s = get_score(df_raw, row_idx, col_to_num("I")) # 目標比
+    diff_s = get_score(df_raw, row_idx, col_to_num("H")) # 差額
+    ly_s = get_score(df_raw, row_idx, col_to_num("M")) # LY(前年実績)
+    ly_r = get_score(df_raw, row_idx, col_to_num("N")) # LY比
+    ly_diff = act_s - ly_s # LY差額
 
-    # メトリックの表示
-    c1, c2, c3, c4 = st.columns(4)
-    c1.write(f"受注実績: **¥{act_s:,.0f}**")
-    c2.write(f"受注目標: **¥{tgt_s:,.0f}**")
-    c3.markdown(f"目標比: {format_ratio_html(ratio_s)} (差額 ¥{diff_s:,.0f})", unsafe_allow_html=True)
-    
-    c1, c2, c3, c4 = st.columns(4)
-    c1.write(f"前年実績: **¥{ly_s:,.0f}**")
-    c2.markdown(f"前年比: {format_ratio_html(ly_r)} (差額 ¥{ly_diff:,.0f})", unsafe_allow_html=True)
+    sales_table = f"""
+    <table style="width:100%; border-collapse: collapse; text-align: center; border: 1px solid #ddd;">
+        <tr style="background-color: #444; color: white;">
+            <th style="padding: 10px;">受注実績</th>
+            <th>目標</th>
+            <th>目標比</th>
+            <th>差額</th>
+        </tr>
+        <tr>
+            <td rowspan="3" style="font-size: 1.2em; font-weight: bold; border: 1px solid #ddd;">¥{act_s:,.0f}</td>
+            <td style="border: 1px solid #ddd;">¥{tgt_s:,.0f}</td>
+            <td style="border: 1px solid #ddd;">{format_ratio_html(ratio_s)}</td>
+            <td style="border: 1px solid #ddd;">¥{diff_s:,.0f}</td>
+        </tr>
+        <tr style="background-color: #444; color: white;">
+            <th>LY</th>
+            <th>LY比</th>
+            <th>差額</th>
+        </tr>
+        <tr>
+            <td style="border: 1px solid #ddd;">¥{ly_s:,.0f}</td>
+            <td style="border: 1px solid #ddd;">{format_ratio_html(ly_r)}</td>
+            <td style="border: 1px solid #ddd;">¥{ly_diff:,.0f}</td>
+        </tr>
+    </table>
+    """
+    st.write(sales_table, unsafe_allow_html=True)
+    st.write("") # スペース用
 
-    st.divider()
-
-    # --- KPI別 ---
+    # --- KPI別セクション ---
     st.markdown("#### KPI別")
     
     kpi_cols = {
@@ -110,22 +130,35 @@ if not df_raw.empty:
 
         tr = (a / t * 100) if t else 0
         lr = (a / ly * 100) if ly else 0
-
-        # 通貨記号の付与（客単価のみ¥を付けるなど調整可能）
+        
         unit = "¥" if item == "客単価" else ""
+        eval_mark = get_eval_mark(tr) # 評価記号
 
-        kpi_rows.append({
-            "KPI指標": item,
-            "本年実績": f"{unit}{a:,.0f}" if a > 100 else f"{a:.2f}",
-            "本年目標": f"{unit}{t:,.0f}" if t > 100 else f"{t:.2f}",
-            "目標比": format_ratio_html(tr),
-            "前年実績": f"{unit}{ly:,.0f}" if ly > 100 else f"{ly:.2f}",
-            "前年比": format_ratio_html(lr)
-        })
+        kpi_rows.append(f"""
+        <tr>
+            <td style="border: 1px solid #ddd; padding: 8px;">{eval_mark}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">{item}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">{unit}{t:,.0f if t > 100 else t:.2f}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">{unit}{a:,.0f if a > 100 else a:.2f}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">{format_ratio_html(tr)}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">{format_ratio_html(lr)}</td>
+        </tr>
+        """)
 
-    # HTMLテーブルとして出力（Pandasの標準テーブルでは色指定が難しいため）
-    kpi_df = pd.DataFrame(kpi_rows)
-    st.write(kpi_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    kpi_table_html = f"""
+    <table style="width:100%; border-collapse: collapse; text-align: center; border: 1px solid #ddd;">
+        <tr style="background-color: #444; color: white;">
+            <th style="width: 50px;">評</th>
+            <th>KPI</th>
+            <th>目標</th>
+            <th>実績</th>
+            <th>目標比</th>
+            <th>LY比</th>
+        </tr>
+        {"".join(kpi_rows)}
+    </table>
+    """
+    st.write(kpi_table_html, unsafe_allow_html=True)
 
 else:
     st.warning("データを読み込めませんでした。")
