@@ -13,8 +13,9 @@ st.markdown("""
     }
     .reach { color: #1f77b4; font-weight: bold; } /* 達成: ブルー + 太字 */
     .unmet { color: #d62728; } /* 未達: 赤字 */
-    th { background-color: #444 !important; color: white !important; padding: 10px; }
+    th { background-color: #444 !important; color: white !important; padding: 10px; text-align: center; border: 1px solid #ddd; }
     td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -59,7 +60,6 @@ def format_ratio_html(ratio):
     else:
         return f'<span class="unmet">{ratio:.1f}%</span>'
 
-# 数値を適切な形式（カンマor小数点）に整える関数
 def num_fmt(val, unit=""):
     if pd.isna(val) or val == 0: return "-"
     if val >= 100:
@@ -91,7 +91,7 @@ if not df_raw.empty:
     ly_diff = act_s - ly_s
 
     sales_table = f"""
-    <table style="width:100%; border-collapse: collapse;">
+    <table>
         <tr>
             <th style="width: 25%;">受注実績</th>
             <th style="width: 25%;">目標</th>
@@ -116,7 +116,7 @@ if not df_raw.empty:
         </tr>
     </table>
     """
-    st.write(sales_table, unsafe_allow_html=True)
+    st.markdown(sales_table, unsafe_allow_html=True)
     st.write("")
 
     # --- KPI別セクション ---
@@ -129,7 +129,8 @@ if not df_raw.empty:
         "客数":   {"act": "AT", "tgt": "AX", "ly": "BB"},
     }
 
-    kpi_rows_html = ""
+    # 各行のHTMLを生成
+    rows_content = ""
     for item, cols in kpi_cols.items():
         a = get_score(df_raw, row_idx, col_to_num(cols["act"]))
         t = get_score(df_raw, row_idx, col_to_num(cols["tgt"]))
@@ -141,7 +142,7 @@ if not df_raw.empty:
         unit = "¥" if item == "客単価" else ""
         eval_mark = get_eval_mark(tr)
 
-        kpi_rows_html += f"""
+        rows_content += f"""
         <tr>
             <td>{eval_mark}</td>
             <td>{item}</td>
@@ -152,8 +153,9 @@ if not df_raw.empty:
         </tr>
         """
 
-    kpi_table_html = f"""
-    <table style="width:100%; border-collapse: collapse;">
+    # テーブル全体を一つのHTMLとして表示
+    full_kpi_table = f"""
+    <table>
         <tr>
             <th style="width: 80px;">評</th>
             <th>KPI</th>
@@ -162,10 +164,10 @@ if not df_raw.empty:
             <th>目標比</th>
             <th>LY比</th>
         </tr>
-        {kpi_rows_html}
+        {rows_content}
     </table>
     """
-    st.write(kpi_table_html, unsafe_allow_html=True)
+    st.markdown(full_kpi_table, unsafe_allow_html=True)
 
 else:
     st.warning("データを読み込めませんでした。")
