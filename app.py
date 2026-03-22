@@ -39,11 +39,12 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# A列から「W1」「W2」などのキーワードを探して行番号を返す関数（ズレ防止）
 def find_row_by_keyword(df, keyword):
+    """A列からキーワードを探す。見つからなければNoneを返す"""
     try:
-        # A列(index 0)から検索
-        res = df[df[0].astype(str).str.contains(keyword, na=False)].index
+        # 文字列として比較し、完全一致に近いものを探す
+        mask = df[0].astype(str).str.strip().str.contains(keyword, na=False)
+        res = df[mask].index
         return res[0] + 1 if len(res) > 0 else None
     except:
         return None
@@ -70,13 +71,19 @@ target_sheet_name = f"{year_val[2:]}{month_val}"
 df_raw = load_data_by_sheet_name(target_sheet_name)
 
 if not df_raw.empty:
-    # 各週の行番号をキーワード検索で特定する（これでズレを解消）
+    # 行番号の特定
+    default_rows = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
     week_rows = {}
+    
     for w in ["W1", "W2", "W3", "W4", "W5", "W6"]:
-        r = find_row_by_keyword(df_raw, w)
-        if r: week_rows[w] = r
+        found_idx = find_row_by_keyword(df_raw, w)
+        if found_idx:
+            week_rows[w] = found_idx
+        else:
+            # 見つからない場合はデフォルトの行番号を入れる（KeyError防止）
+            week_rows[w] = default_rows[w]
 
-    selected_week = st.sidebar.selectbox("表示週を選択", list(week_rows.keys()))
+    selected_week = st.sidebar.selectbox("表示週を選択", ["W1", "W2", "W3", "W4", "W5", "W6"])
     row_idx = week_rows[selected_week]
 
     st.title(f"ストアカルテ {year_val}年{month_val}月")
@@ -102,9 +109,12 @@ if not df_raw.empty:
 
     # --- 2. WEEKサマリー ---
     w_rows = ""
-    for w_name, r_idx in week_rows.items():
+    for w_name in ["W1", "W2", "W3", "W4", "W5", "W6"]:
+        r_idx = week_rows[w_name]
         wa, wt, wb, wl = get_score(df_raw, r_idx, 6), get_score(df_raw, r_idx, 7), get_score(df_raw, r_idx, 10), get_score(df_raw, r_idx, 13)
-        w_rows += f'<tr><td>{w_name}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num(wa-wt, wa>=wt)}</td><td>{fmt_ratio(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num(wa-wb, wa>=wb)}</td><td>{fmt_ratio(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
+        # 実績が0より大きい週だけ表示
+        if wa > 0 or wt > 0:
+            w_rows += f'<tr><td>{w_name}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num(wa-wt, wa>=wt)}</td><td>{fmt_ratio(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num(wa-wb, wa>=wb)}</td><td>{fmt_ratio(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
@@ -134,4 +144,4 @@ if not df_raw.empty:
     st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
 else:
-    st.error(f"シート「{target_sheet_name}」が見つかりませんでした。スプレッドシートのタブ名が「2603」のような形式になっているか確認してください。")
+    st.error(f"シート「{target_sheet_name}」が見つかりませんでした。")
