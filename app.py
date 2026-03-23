@@ -2,29 +2,7 @@
 import streamlit as st
 import pandas as pd
 
-# 1. ページ設定
-st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
-
-# スタイルの定義（縁を削除、フォント指定）
-st.markdown('''
-<style>
-    html,body,[class*="css"]{font-family:"Meiryo",sans-serif;}
-    .reach { color: #1f77b4; font-weight: bold; } /* 達成: ブルー */
-    .unmet { color: #d62728; } /* 未達: レッド */
-    .eval-mark { font-weight: bold; font-size: 1.2em; }
-    .base-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85em; }
-    .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
-    .base-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
-    .kpi-table th { background-color: #444!important; color: white!important; padding: 10px; border: 1px solid #ddd; }
-    
-    /* 見出しから縁（border-left）を削除 */
-    h4 { margin-top: 20px; margin-bottom: 10px; padding-left: 0; border-left: none; }
-</style>
-''', unsafe_allow_html=True)
-
-st.title("ストアカルテ2026年3月")
-
-# 2. データ取得
+# --- データ取得・準備 ---
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
 SHEET_GID = "1502960872"
 
@@ -42,43 +20,67 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 表示用ヘルパー関数群 ---
-
-def color_text(text, is_reached):
-    """色付きのスパンを返す"""
-    cls = "reach" if is_reached else "unmet"
-    return f'<span class="{cls}">{text}</span>'
-
-def fmt_num(val, is_reached, unit="", is_bold=False):
-    """数値をカンマ区切りにし、色を付ける"""
-    if abs(val) >= 100:
-        txt = f"{unit}{abs(val):,.0f}"
-    else:
-        txt = f"{unit}{abs(val):.2f}"
-    
-    if is_bold:
-        txt = f"<b>{txt}</b>"
-    return color_text(txt, is_reached)
-
-def fmt_ratio(val, is_reached):
-    """比率を%形式にして色を付ける"""
-    txt = f"{val:.1f}%"
-    return color_text(txt, is_reached)
-
+# データの読み込み
 df_raw = load_raw_data()
 
+# --- サイドバー・期間設定（page_titleのために先に定義） ---
 if not df_raw.empty:
     st.sidebar.header("期間選択")
     week_map = {"W1 (3/1)": 57, "W2 (3/2-3/8)": 58, "W3 (3/9-3/15)": 59, "W4 (3/16-3/22)": 60, "W5 (3/23-3/29)": 61, "W6 (3/30-3/31)": 62}
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_label]
+    
+    # PDFファイル名用：ラベルから「W1」などの文字だけを抽出
+    file_period = selected_label.split()[0]
+    dynamic_title = f"ストアカルテ2026年3月{file_period}"
+else:
+    dynamic_title = "ストアカルテ2026年3月"
 
+# 1. ページ設定（ここでPDF保存時のデフォルトファイル名が決まります）
+st.set_page_config(page_title=dynamic_title, layout="wide")
+
+# スタイルの定義
+st.markdown('''
+<style>
+    html,body,[class*="css"]{font-family:"Meiryo",sans-serif;}
+    .reach { color: #1f77b4; font-weight: bold; }
+    .unmet { color: #d62728; }
+    .eval-mark { font-weight: bold; font-size: 1.2em; }
+    .base-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85em; }
+    .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
+    .base-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
+    .kpi-table th { background-color: #444!important; color: white!important; padding: 10px; border: 1px solid #ddd; }
+    h4 { margin-top: 20px; margin-bottom: 10px; padding-left: 0; border-left: none; }
+</style>
+''', unsafe_allow_html=True)
+
+st.title("ストアカルテ2026年3月")
+
+# --- 表示用ヘルパー関数群 ---
+def color_text(text, is_reached):
+    cls = "reach" if is_reached else "unmet"
+    return f'<span class="{cls}">{text}</span>'
+
+def fmt_num(val, is_reached, unit="", is_bold=False):
+    if abs(val) >= 100:
+        txt = f"{unit}{abs(val):,.0f}"
+    else:
+        txt = f"{unit}{abs(val):.2f}"
+    if is_bold:
+        txt = f"<b>{txt}</b>"
+    return color_text(txt, is_reached)
+
+def fmt_ratio(val, is_reached):
+    txt = f"{val:.1f}%"
+    return color_text(txt, is_reached)
+
+# --- コンテンツ表示 ---
+if not df_raw.empty:
     # --- 1. All Stores ---
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     g6_mtd_t, i6_mtd_b, k6_mtd_l = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
 
-    # 見出しから緑の縁が消えます
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
     all_html = f'''
     <table class="base-table">
