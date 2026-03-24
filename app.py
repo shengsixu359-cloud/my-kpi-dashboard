@@ -27,7 +27,7 @@ def get_score(df, row, col):
 
 df_raw = load_raw_data()
 
-# サイドバー設定（タイトル設定のために先に実行）
+# サイドバー設定
 if not df_raw.empty:
     st.sidebar.header("期間選択")
     week_map = {"W1 (3/1)": 57, "W2 (3/2-3/8)": 58, "W3 (3/9-3/15)": 59, "W4 (3/16-3/22)": 60, "W5 (3/23-3/29)": 61, "W6 (3/30-3/31)": 62}
@@ -41,6 +41,7 @@ if not df_raw.empty:
     
     updated_comments = {}
     for kpi in ["座数", "客単価", "CVR", "客数"]:
+        # text_areaで入力を受け付ける
         updated_comments[kpi] = st.sidebar.text_area(f"{kpi}の理由", value=current_comments.get(kpi, ""), key=f"in_{selected_label}_{kpi}", height=80)
     st.session_state.kpi_comments[selected_label] = updated_comments
 
@@ -69,12 +70,12 @@ st.markdown('''
 st.title("ストアカルテ2026年3月")
 
 # --- 表示用関数 ---
-def fmt_num(val, is_reached, unit=""):
+def fmt_num_span(val, is_reached, unit=""):
     txt = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
     cls = "reach" if is_reached else "unmet"
     return f'<span class="{cls}">{txt}</span>'
 
-def fmt_ratio(val, is_reached):
+def fmt_ratio_span(val, is_reached):
     cls = "reach" if is_reached else "unmet"
     return f'<span class="{cls}">{val:.1f}%</span>'
 
@@ -84,61 +85,8 @@ if not df_raw.empty:
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     
-    st.markdown(f'''
+    all_stores_html = f'''
     <h4>All Stores ※FC excluded</h4>
     <table class="base-table">
         <tr><th>月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{g2_act:,.0f}</td></tr>
-        <tr><th>月次目標</th><td>{g3_tgt:,.0f}</td><th>月次予算</th><td>{i3_bg:,.0f}</td><th>前年受注額</th><td>{k3_ly:,.0f}</td></tr>
-        <tr><th>目標比</th><td>{fmt_ratio(g2_act/g3_tgt*100 if g3_tgt else 0, g2_act>=g3_tgt)}</td><th>予算比</th><td>{fmt_ratio(g2_act/i3_bg*100 if i3_bg else 0, g2_act>=i3_bg)}</td><th>前年比</th><td>{fmt_ratio(g2_act/k3_ly*100 if k3_ly else 0, g2_act>=k3_ly)}</td></tr>
-        <tr><th>差額</th><td>{fmt_num(g2_act-g3_tgt, g2_act>=g3_tgt)}</td><th>差額</th><td>{fmt_num(g2_act-i3_bg, g2_act>=i3_bg)}</td><th>差額</th><td>{fmt_num(g2_act-k3_ly, g2_act>=k3_ly)}</td></tr>
-    </table>
-    ''', unsafe_allow_html=True)
-
-    # 2. WEEKサマリー
-    w_rows = ""
-    for w_name, r_idx in week_map.items():
-        wa, wt, wb, wl = get_score(df_raw, r_idx, 6), get_score(df_raw, r_idx, 7), get_score(df_raw, r_idx, 10), get_score(df_raw, r_idx, 13)
-        w_rows += f'<tr><td>{w_name.split()[0]}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num(wa-wt, wa>=wt)}</td><td>{fmt_ratio(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num(wa-wb, wa>=wb)}</td><td>{fmt_ratio(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
-    st.markdown(f'<h4>WEEKサマリー</h4><table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
-
-    # 4. KPI別 (ご提示のHTML構造を生成)
-    k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
-    k_rows_html = ""
-    week_comments = st.session_state.kpi_comments.get(selected_label, {})
-
-    for k, (ac, tc, lc) in k_map.items():
-        av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
-        tr = av/tv*100 if tv else 0
-        lr = av/lv*100 if lv else 0
-        u = "¥" if k=="客単価" else ""
-        m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
-        
-        # 数値整形
-        val_tgt = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        val_act = fmt_num(av, av>=tv, u)
-        
-        # 備考取得
-        comment = week_comments.get(k, "").replace("\n", "<br>")
-        
-        k_rows_html += f'''
-        <tr>
-            <td><span class="eval-mark">{m}</span></td>
-            <td>{k}</td>
-            <td>{val_tgt}</td>
-            <td>{val_act}</td>
-            <td>{fmt_ratio(tr, tr>=100)}</td>
-            <td>{fmt_ratio(lr, lr>=100)}</td>
-            <td class="comment-cell">{comment}</td>
-        </tr>
-        '''
-    
-    st.markdown(f'''
-    <h4>KPI別</h4>
-    <table class="base-table kpi-table">
-        <tr><th style="width:40px;">評</th><th style="width:80px;">KPI</th><th style="width:100px;">目標</th><th style="width:100px;">実績</th><th style="width:80px;">目標比</th><th style="width:80px;">LY比</th><th>備考</th></tr>
-        {k_rows_html}
-    </table>
-    ''', unsafe_allow_html=True)
-
-else:
-    st.warning("データを読み込めませんでした。")
+        <tr><th>
