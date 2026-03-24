@@ -23,7 +23,7 @@ def get_score(df, row, col):
 # データの読み込み
 df_raw = load_raw_data()
 
-# --- セッション状態の初期化（コメント保持用） ---
+# --- セッション状態の初期化（週ごとのコメント保持用） ---
 if 'kpi_comments' not in st.session_state:
     st.session_state.kpi_comments = {}
 
@@ -34,22 +34,21 @@ if not df_raw.empty:
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_label]
     
-    # 週ごとの備考入力フォーム
+    # 備考入力エリア
     st.sidebar.markdown("---")
     st.sidebar.subheader(f"{selected_label} 理由入力")
     
-    # 既存のコメントを取得
+    # 現在の週の保存済みコメントを取得
     current_comments = st.session_state.kpi_comments.get(selected_label, {"座数": "", "客単価": "", "CVR": "", "客数": ""})
     
-    # 各KPIの入力欄
+    # 4つのKPIそれぞれの入力欄
     updated_comments = {}
     for kpi in ["座数", "客単価", "CVR", "客数"]:
-        updated_comments[kpi] = st.sidebar.text_area(f"{kpi}の理由", value=current_comments.get(kpi, ""), key=f"input_{selected_label}_{kpi}", height=68)
+        updated_comments[kpi] = st.sidebar.text_area(f"{kpi}の理由", value=current_comments.get(kpi, ""), key=f"in_{selected_label}_{kpi}", height=80)
     
-    # セッション状態を更新
+    # セッションに保存
     st.session_state.kpi_comments[selected_label] = updated_comments
 
-    # PDFファイル名用
     file_period = selected_label.split()[0]
     dynamic_title = f"ストアカルテ2026年3月{file_period}"
 else:
@@ -69,30 +68,27 @@ st.markdown('''
     .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
     .base-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
     .kpi-table th { background-color: #444!important; color: white!important; padding: 10px; border: 1px solid #ddd; }
-    .comment-cell { text-align: left !important; font-size: 0.9em; color: #333; min-width: 200px; }
+    .comment-cell { text-align: left !important; font-size: 0.9em; color: #333; min-width: 250px; vertical-align: middle; white-space: pre-wrap; }
     h4 { margin-top: 20px; margin-bottom: 10px; padding-left: 0; border-left: none; }
 </style>
 ''', unsafe_allow_html=True)
 
 st.title("ストアカルテ2026年3月")
 
-# --- 表示用ヘルパー関数群 ---
+# --- 表示用ヘルパー関数 ---
 def color_text(text, is_reached):
     cls = "reach" if is_reached else "unmet"
     return f'<span class="{cls}">{text}</span>'
 
-def fmt_num(val, is_reached, unit="", is_bold=False):
+def fmt_num(val, is_reached, unit=""):
     if abs(val) >= 100:
         txt = f"{unit}{abs(val):,.0f}"
     else:
         txt = f"{unit}{abs(val):.2f}"
-    if is_bold:
-        txt = f"<b>{txt}</b>"
     return color_text(txt, is_reached)
 
 def fmt_ratio(val, is_reached):
-    txt = f"{val:.1f}%"
-    return color_text(txt, is_reached)
+    return color_text(f"{val:.1f}%", is_reached)
 
 # --- コンテンツ表示 ---
 if not df_raw.empty:
@@ -133,10 +129,9 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- 4. KPI別 (備考追加) ---
+    # --- 4. KPI別 (ご提示のHTML構造に基づき修正) ---
     k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
     k_rows = ""
-    # セッションから現在の週のコメントを取得
     week_comments = st.session_state.kpi_comments.get(selected_label, {})
 
     for k, (ac, tc, lc) in k_map.items():
@@ -147,21 +142,22 @@ if not df_raw.empty:
         u = "¥" if k=="客単価" else ""
         m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
         
-        fmt_target = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        fmt_actual = fmt_num(av, reached, u)
+        # 数値の整形
+        val_tgt = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
+        val_act = fmt_num(av, reached, u)
         
-        # 改行をHTMLタグに変換
-        comment_text = week_comments.get(k, "").replace("\n", "<br>")
+        # セッションからコメントを取得（改行対応）
+        comment = week_comments.get(k, "").replace("\n", "<br>")
         
         k_rows += f'''
         <tr>
             <td><span class="eval-mark">{m}</span></td>
             <td>{k}</td>
-            <td>{fmt_target}</td>
-            <td>{fmt_actual}</td>
+            <td>{val_tgt}</td>
+            <td>{val_act}</td>
             <td>{fmt_ratio(tr, tr>=100)}</td>
             <td>{fmt_ratio(lr, lr>=100)}</td>
-            <td class="comment-cell">{comment_text}</td>
+            <td class="comment-cell">{comment}</td>
         </tr>
         '''
     
