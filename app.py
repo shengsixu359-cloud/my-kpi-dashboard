@@ -141,7 +141,27 @@ if not df_raw.empty:
     # 4. KPI別
     k_map = {"座数":(44,48,52,"座数理由"), "客単価":(47,51,55,"客単価理由"), "CVR":(45,49,53,"CVR理由"), "客数":(46,50,54,"客数理由")}
     k_rows = ""
+    # 4. KPI別
+    k_map = {"座数":(44,48,52,"座数理由"), "客単価":(47,51,55,"客単価理由"), "CVR":(45,49,53,"CVR理由"), "客数":(46,50,54,"客数理由")}
+    k_rows = ""
     for k, (ac, tc, lc, r_key) in k_map.items():
+        av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
+        tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
+        u = "¥" if k=="客単価" else ""
+        m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
+        
+        # --- ここから修正部分 ---
+        # 目標数値(tv)の整形を事前に行う
+        if tv >= 100:
+            val_tgt_str = f"{u}{tv:,.0f}" # 100以上ならカンマ区切り整数
+        else:
+            val_tgt_str = f"{u}{tv:.2f}"   # 100未満なら小数点2桁
+        # ------------------------
+        
+        reason = current_data.get(r_key, "").replace("\n", "<br>")
+        
+        # 修正した val_tgt_str を使用してHTMLを組み立てる
+        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{val_tgt_str}</td><td>{fmt_num_h(av, av>=tv, u)}</td><td>{fmt_ratio_h(tr, tr>=100)}</td><td>{fmt_ratio_h(lr, lr>=100)}</td><td class="comment-cell">{reason}</td></tr>'
         av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
         tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
         u = "¥" if k=="客単価" else ""
