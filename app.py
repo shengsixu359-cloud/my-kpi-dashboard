@@ -2,8 +2,14 @@
 import streamlit as st
 import pandas as pd
 
-# 1. ページ設定
-st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
+# --- 1. ページ基本設定 ---
+# ページ設定（タイトルは動的に変わるためここでは設定しない）
+st.set_page_config(layout="wide")
+
+# セッション状態の初期化（週ごとのコメント保持用メモリ）
+if 'kpi_comments' not in st.session_state:
+    # 構造: {'W1 (3/1)': {'座数': '...', '客単価': '...'}, 'W2...': {...}}
+    st.session_state.kpi_comments = {}
 
 # スタイルの定義
 st.markdown('''
@@ -16,6 +22,10 @@ st.markdown('''
     .base-table th { background-color: #4db6ac; color: white; padding: 6px; border: 1px solid #ddd; text-align: center; }
     .base-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
     .kpi-table th { background-color: #444!important; color: white!important; padding: 10px; border: 1px solid #ddd; }
+    
+    /* 備考欄（理由）のスタイル：左寄せ、少し小さめ、折り返しあり */
+    .comment-cell { text-align: left !important; font-size: 0.9em; color: #333; min-width: 200px; white-space: pre-wrap; vertical-align: middle;}
+    
     h4 { margin-top: 20px; margin-bottom: 10px; padding-left: 0; border-left: none; }
 </style>
 ''', unsafe_allow_html=True)
@@ -43,29 +53,55 @@ def get_score(df, row, col):
 # --- 表示用ヘルパー関数群 ---
 
 def color_text(text, is_reached):
+    """色付きのスパンを返す"""
     cls = "reach" if is_reached else "unmet"
     return f'<span class="{cls}">{text}</span>'
 
 def fmt_num(val, is_reached, unit="", is_bold=False):
+    """数値をカンマ区切りにし、色を付ける"""
     if abs(val) >= 100:
         txt = f"{unit}{abs(val):,.0f}"
     else:
         txt = f"{unit}{abs(val):.2f}"
+    
     if is_bold:
         txt = f"<b>{txt}</b>"
     return color_text(txt, is_reached)
 
 def fmt_ratio(val, is_reached):
+    """比率を%形式にして色を付ける"""
     txt = f"{val:.1f}%"
     return color_text(txt, is_reached)
 
 df_raw = load_raw_data()
 
 if not df_raw.empty:
+    # --- サイドバー・期間選択 ---
     st.sidebar.header("期間選択")
     week_map = {"W1 (3/1)": 57, "W2 (3/2-3/8)": 58, "W3 (3/9-3/15)": 59, "W4 (3/16-3/22)": 60, "W5 (3/23-3/29)": 61, "W6 (3/30-3/31)": 62}
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_label]
+
+    # --- サイドバー・理由入力フォーム ---
+    st.sidebar.markdown("---")
+    st.sidebar.subheader(f"{selected_label} 理由入力")
+    st.sidebar.info("ここにテキストを入力すると、右側の「KPI別」テーブルの「理由」欄に反映されます。")
+
+    # 現在選択されている週のコメント群を取得（なければ空の辞書）
+    current_week_comments = st.session_state.kpi_comments.get(selected_label, {})
+
+    # 各KPIごとの入力欄を作成し、入力値を辞書に格納
+    new_comments = {}
+    kpi_list = ["座数", "客単価", "CVR", "客数"]
+    
+    for kpi in kpi_list:
+        # 以前の入力値を取得
+        prev_value = current_week_comments.get(kpi, "")
+        # 入力欄を作成（keyを週名+KPI名にして独立させる）
+        new_comments[kpi] = st.sidebar.text_area(f"{kpi}の理由", value=prev_value, key=f"reason_{selected_label}_{kpi}", height=100)
+
+    # 入力された内容をセッション状態に保存（上書き更新）
+    st.session_state.kpi_comments[selected_label] = new_comments
 
     # --- 1. All Stores ---
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
@@ -95,7 +131,7 @@ if not df_raw.empty:
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
 
-    # --- 3. 受注実績詳細 ---
+    # --- 3. 受注実績詳細 (選択週) ---
     da, dt, dr = get_score(df_raw, row_idx, 6), get_score(df_raw, row_idx, 7), get_score(df_raw, row_idx, 9)
     dl, dlr = get_score(df_raw, row_idx, 13), get_score(df_raw, row_idx, 14)
     st.markdown(f"<h4>受注実績 {selected_label}</h4>", unsafe_allow_html=True)
@@ -108,7 +144,7 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- 4. KPI別 ---
+    # --- 4. KPI別 (ご要望の修正箇所) ---
     k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
     k_rows = ""
     for k, (ac, tc, lc) in k_map.items():
@@ -122,10 +158,24 @@ if not df_raw.empty:
         fmt_target = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         fmt_actual = fmt_num(av, reached, u)
         
-        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{fmt_target}</td><td>{fmt_actual}</td><td>{fmt_ratio(tr, tr>=100)}</td><td>{fmt_ratio(lr, lr>=100)}</td></tr>'
+        # セッション状態から、この週・このKPIのコメントを取得
+        # 改行コードをHTMLの<br>に変換して表示
+        reason_text = st.session_state.kpi_comments[selected_label].get(k, "").replace("\n", "<br>")
+        
+        k_rows += f'''
+        <tr>
+            <td><span class="eval-mark">{m}</span></td>
+            <td>{k}</td>
+            <td>{fmt_target}</td>
+            <td>{fmt_actual}</td>
+            <td>{fmt_ratio(tr, tr>=100)}</td>
+            <td>{fmt_ratio(lr, lr>=100)}</td>
+            <td class="comment-cell">{reason_text}</td> /* 追加したカラム */
+        </tr>'''
     
     st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
-    st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th></tr>{k_rows}</table>', unsafe_allow_html=True)
+    # ヘッダーに「理由」を追加
+    st.markdown(f'<table class="base-table kpi-table"><tr><th style="width:80px;">評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
 else:
     st.warning("データを読み込めませんでした。")
