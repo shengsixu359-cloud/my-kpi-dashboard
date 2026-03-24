@@ -5,29 +5,39 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # --- 1. ページ基本設定 ---
+# ページ設定（タイトルは動的に変わるため、後ほど再設定）
+st.set_page_config(layout="wide")
+
 # セッション状態の初期化
 if 'needs_refresh' not in st.session_state:
     st.session_state.needs_refresh = False
 
 # --- 2. Googleスプレッドシート接続設定 ---
 # Secretsから認証情報を取得して接続
-scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-creds_dict = st.secrets["gcp_service_account"]
-creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-gc = gspread.authorize(creds)
+try:
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    gc = gspread.authorize(creds)
 
-# 【重要】新しく作ったスプレッドシートのIDに書き換えてください
-SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
-sh = gc.open_by_key(SAVE_SHEET_ID)
-ws = sh.worksheet("シート1") # シート名が違う場合は変更してください
+    # 【重要】新しく作った保存用スプレッドシートのIDに書き換えてください
+    SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
+    sh = gc.open_by_key(SAVE_SHEET_ID)
+    ws = sh.worksheet("シート1") 
+except Exception as e:
+    st.error(f"Googleスプレッドシートへの接続に失敗しました。Secretsの設定や権限を確認してください。: {e}")
+    st.stop()
 
-# 元の数値データ読み込み用
+# 元の数値データ読み込み用URL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
 SHEET_GID = "1502960872"
 
 @st.cache_data(ttl=5)
 def load_raw_data():
-    return pd.read_csv(f"{BASE_URL}{SHEET_GID}", header=None)
+    try:
+        return pd.read_csv(f"{BASE_URL}{SHEET_GID}", header=None)
+    except:
+        return pd.DataFrame()
 
 def get_score(df, row, col):
     try:
@@ -38,7 +48,7 @@ def get_score(df, row, col):
 
 # --- 3. 保存・読込ロジック ---
 def get_saved_data():
-    """新シートから全保存データを取得"""
+    """保存用シートから全データを取得"""
     try:
         data = ws.get_all_records()
         return {row['週']: row for row in data}
@@ -46,10 +56,8 @@ def get_saved_data():
         return {}
 
 def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
-    """新シートの該当行を更新または追加"""
+    """該当週のデータを更新または追加"""
     all_data = ws.get_all_values()
-    
-    # 週名がA列のどこにあるか探す
     target_row = -1
     for i, row in enumerate(all_data):
         if row and row[0] == week_label:
@@ -59,13 +67,11 @@ def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
     new_row = [week_label, zasu, tanka, cvr, kyaku, summary]
     
     if target_row != -1:
-        # A列からF列までを更新
         ws.update(range_name=f"A{target_row}:F{target_row}", values=[new_row])
     else:
-        # 新しい行として追加
         ws.append_row(new_row)
 
-# --- 4. メイン表示処理 ---
+# --- 4. データ準備 ---
 df_raw = load_raw_data()
 saved_dict = get_saved_data()
 
@@ -76,7 +82,7 @@ if not df_raw.empty:
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_label]
     
-    # 現在の保存内容を取得（保存シートから）
+    # 保存済みデータの取得
     current_data = saved_dict.get(selected_label, {"座数理由": "", "客単価理由":"", "CVR理由":"", "客数理由":"", "総評":""})
     
     st.sidebar.markdown("---")
@@ -92,18 +98,16 @@ if not df_raw.empty:
         if st.form_submit_button("全ユーザーに共有保存"):
             save_to_sheet(selected_label, r_zasu, r_tanka, r_cvr, r_kyaku, sum_text)
             st.success("共有スプレッドシートに保存しました！")
-            st.cache_data.clear() # キャッシュをクリアして再読込
+            st.cache_data.clear()
             st.rerun()
 
-    # --- ページ設定とスタイル ---
-    dynamic_title = f"ストアカルテ2026年3月{selected_label.split()[0]}"
-    st.set_page_config(page_title=dynamic_title, layout="wide")
-
+    # --- 5. デザイン設定 (指定カラーパレット) ---
     st.markdown(f'''
     <style>
         html, body, [class*="css"] {{ font-family: "Meiryo", sans-serif; color: #3b484e; }}
         .reach {{ color: #58b5ca; font-weight: bold; }}
         .unmet {{ color: #f3a359; font-weight: bold; }}
+        .eval-mark {{ font-weight: bold; font-size: 1.2em; }}
         .base-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.85em; background-color: white; }}
         .base-table th {{ background-color: rgba(88, 181, 202, 0.9); color: white; padding: 8px; border: 1px solid #eeece1; text-align: center; }}
         .base-table td {{ border: 1px solid #eeece1; padding: 8px; text-align: center; }}
@@ -116,18 +120,19 @@ if not df_raw.empty:
 
     st.title("📊 ストアカルテ2026年3月")
 
-    # --- 数値表示ヘルパー ---
+    # --- 6. 各セクションの表示 ---
     def fmt_num_h(val, is_reached, unit=""):
         txt = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
-        return f'<span class="{"reach" if is_reached else "unmet"}">{txt}</span>'
+        cls = "reach" if is_reached else "unmet"
+        return f'<span class="{cls}">{txt}</span>'
 
     def fmt_ratio_h(val, is_reached):
-        return f'<span class="{"reach" if is_reached else "unmet"}">{val:.1f}%</span>'
+        cls = "reach" if is_reached else "unmet"
+        return f'<span class="{cls}">{val:.1f}%</span>'
 
-    # 1. All Stores
+    # All Stores
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
-    
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
     st.markdown(f'''
     <table class="base-table">
@@ -138,37 +143,35 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # 4. KPI別
-    k_map = {"座数":(44,48,52,"座数理由"), "客単価":(47,51,55,"客単価理由"), "CVR":(45,49,53,"CVR理由"), "客数":(46,50,54,"客数理由")}
-    k_rows = ""
-    # 4. KPI別
-    k_map = {"座数":(44,48,52,"座数理由"), "客単価":(47,51,55,"客単価理由"), "CVR":(45,49,53,"CVR理由"), "客数":(46,50,54,"客数理由")}
+    # KPI別
+    k_map = {
+        "座数": (44, 48, 52, "座数理由"),
+        "客単価": (47, 51, 55, "客単価理由"),
+        "CVR": (45, 49, 53, "CVR理由"),
+        "客数": (46, 50, 54, "客数理由")
+    }
     k_rows = ""
     for k, (ac, tc, lc, r_key) in k_map.items():
         av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
         tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
-        u = "¥" if k=="客単価" else ""
-        m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
+        u = "¥" if k == "客単価" else ""
+        m = "◯" if tr >= 100 else "△" if tr >= 90 else "✕"
         
-        # --- ここから修正部分 ---
-        # 目標数値(tv)の整形を事前に行う
-        if tv >= 100:
-            val_tgt_str = f"{u}{tv:,.0f}" # 100以上ならカンマ区切り整数
-        else:
-            val_tgt_str = f"{u}{tv:.2f}"   # 100未満なら小数点2桁
-        # ------------------------
+        # 目標値の整形を修正
+        val_tgt_display = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         
-        reason = current_data.get(r_key, "").replace("\n", "<br>")
-        
-        # 修正した val_tgt_str を使用してHTMLを組み立てる
-        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{val_tgt_str}</td><td>{fmt_num_h(av, av>=tv, u)}</td><td>{fmt_ratio_h(tr, tr>=100)}</td><td>{fmt_ratio_h(lr, lr>=100)}</td><td class="comment-cell">{reason}</td></tr>'
-        av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
-        tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
-        u = "¥" if k=="客単価" else ""
-        m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
-        
-        reason = current_data.get(r_key, "").replace("\n", "<br>")
-        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{u}{tv:,.0f if tv>=100 else .2f}</td><td>{fmt_num_h(av, av>=tv, u)}</td><td>{fmt_ratio_h(tr, tr>=100)}</td><td>{fmt_ratio_h(lr, lr>=100)}</td><td class="comment-cell">{reason}</td></tr>'
+        reason = str(current_data.get(r_key, "")).replace("\n", "<br>")
+        k_rows += f'''
+        <tr>
+            <td><span class="eval-mark">{m}</span></td>
+            <td>{k}</td>
+            <td>{val_tgt_display}</td>
+            <td>{fmt_num_h(av, av >= tv, u)}</td>
+            <td>{fmt_ratio_h(tr, tr >= 100)}</td>
+            <td>{fmt_ratio_h(lr, lr >= 100)}</td>
+            <td class="comment-cell">{reason}</td>
+        </tr>
+        '''
     
     st.markdown(f'''
     <h4>KPI別</h4>
@@ -178,7 +181,7 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # 5. 総評
+    # 総評
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
     st.markdown(f'<div class="summary-box">{current_data.get("総評", "")}</div>', unsafe_allow_html=True)
 
