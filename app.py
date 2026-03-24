@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # --- 1. ページ基本設定 ---
-# ページ設定を一番最初に配置（エラー回避のため）
+# ページ設定はコードの冒頭に配置
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
 # セッション状態の初期化
@@ -19,7 +19,7 @@ try:
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(creds)
 
-    # 【重要】作成した新しいスプレッドシートのIDをここに貼り付けてください
+    # 【重要】ご自身で作成した新しいスプレッドシートのIDに書き換えてください
     SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
     sh = gc.open_by_key(SAVE_SHEET_ID)
     ws = sh.worksheet("シート1") 
@@ -66,22 +66,27 @@ def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
     new_row = [week_label, zasu, tanka, cvr, kyaku, summary]
     
     if target_row != -1:
+        # 既存の行を更新
         ws.update(range_name=f"A{target_row}:F{target_row}", values=[new_row])
     else:
+        # 新しい行として末尾に追加
         ws.append_row(new_row)
 
-# --- 4. データ読み込み ---
+# --- 4. データ準備 ---
 df_raw = load_raw_data()
 saved_dict = get_saved_data()
 
 if not df_raw.empty:
-    # サイドバー設定
+    # サイドバー：期間選択
     st.sidebar.header("📅 期間選択")
-    week_map = {"W1 (3/1)": 57, "W2 (3/2-3/8)": 58, "W3 (3/9-3/15)": 59, "W4 (3/16-3/22)": 60, "W5 (3/23-3/29)": 61, "W6 (3/30-3/31)": 62}
+    week_map = {
+        "W1 (3/1)": 57, "W2 (3/2-3/8)": 58, "W3 (3/9-3/15)": 59, 
+        "W4 (3/16-3/22)": 60, "W5 (3/23-3/29)": 61, "W6 (3/30-3/31)": 62
+    }
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_label]
     
-    # 保存済みデータの取得（キーが存在しない場合は空の辞書を返す）
+    # 保存済みデータの取得
     current_data = saved_dict.get(selected_label, {
         "週": selected_label, "座数理由": "", "客単価理由": "", "CVR理由": "", "客数理由": "", "総評": ""
     })
@@ -89,6 +94,7 @@ if not df_raw.empty:
     st.sidebar.markdown("---")
     st.sidebar.subheader(f"📝 {selected_label} 共有・保存")
     
+    # 理由・総評入力フォーム
     with st.sidebar.form("input_form"):
         r_zasu = st.text_area("座数の理由", value=current_data.get("座数理由",""))
         r_tanka = st.text_area("客単価の理由", value=current_data.get("客単価理由",""))
@@ -99,7 +105,7 @@ if not df_raw.empty:
         if st.form_submit_button("全ユーザーに共有保存"):
             save_to_sheet(selected_label, r_zasu, r_tanka, r_cvr, r_kyaku, sum_text)
             st.success("共有スプレッドシートに保存しました！")
-            st.cache_data.clear()
+            st.cache_data.clear() # 最新データを読み込むためキャッシュクリア
             st.rerun()
 
     # --- 5. デザイン設定 (指定カラーパレット) ---
@@ -121,7 +127,7 @@ if not df_raw.empty:
 
     st.title("📊 ストアカルテ2026年3月")
 
-    # --- 6. 各セクションの表示ヘルパー ---
+    # --- 6. 表示用ヘルパー関数 ---
     def fmt_num_h(val, is_reached, unit=""):
         txt = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
         cls = "reach" if is_reached else "unmet"
@@ -131,9 +137,12 @@ if not df_raw.empty:
         cls = "reach" if is_reached else "unmet"
         return f'<span class="{cls}">{val:.1f}%</span>'
 
+    # --- 7. 各セクションの表示 ---
+    
     # All Stores
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
+    
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
     st.markdown(f'''
     <table class="base-table">
@@ -151,23 +160,22 @@ if not df_raw.empty:
         "CVR": (45, 49, 53, "CVR理由"),
         "客数": (46, 50, 54, "客数理由")
     }
-    k_rows = ""
+    k_rows_html = ""
     for k, (ac, tc, lc, r_key) in k_map.items():
         av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
         tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
         u = "¥" if k == "客単価" else ""
         m = "◯" if tr >= 100 else "△" if tr >= 90 else "✕"
         
-        # 目標数値の整形（エラー回避のために事前に文字列化）
+        # 目標値の整形をループ内で事前に行う（エラー回避）
         if tv >= 100:
             val_tgt_display = f"{u}{tv:,.0f}"
         else:
             val_tgt_display = f"{u}{tv:.2f}"
             
-        # 理由の取得
         reason = str(current_data.get(r_key, "")).replace("\n", "<br>")
         
-        k_rows += f'''
+        k_rows_html += f'''
         <tr>
             <td><span class="eval-mark">{m}</span></td>
             <td>{k}</td>
@@ -182,8 +190,13 @@ if not df_raw.empty:
     st.markdown(f'''
     <h4>KPI別</h4>
     <table class="base-table kpi-table">
-        <tr><th style="width:40px;">評</th><th style="width:80px;">KPI</th><th style="width:100px;">目標</th><th style="width:100px;">実績</th><th style="width:80px;">目標比</th><th style="width:80px;">LY比</th><th>理由</th></tr>
-        {k_rows}
+        <tr>
+            <th style="width:40px;">評</th><th style="width:80px;">KPI</th>
+            <th style="width:100px;">目標</th><th style="width:100px;">実績</th>
+            <th style="width:80px;">目標比</th><th style="width:80px;">LY比</th>
+            <th>理由</th>
+        </tr>
+        {k_rows_html}
     </table>
     ''', unsafe_allow_html=True)
 
