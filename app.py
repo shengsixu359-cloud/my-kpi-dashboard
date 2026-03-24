@@ -49,6 +49,7 @@ if not df_raw.empty:
     # セッションに保存
     st.session_state.kpi_comments[selected_label] = updated_comments
 
+    # 動的なページタイトルの設定
     file_period = selected_label.split()[0]
     dynamic_title = f"ストアカルテ2026年3月{file_period}"
 else:
@@ -129,7 +130,7 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- 4. KPI別 (ご提示のHTML構造に基づき修正) ---
+    # --- 4. KPI別 (ご提示のHTML構造を反映) ---
     k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
     k_rows = ""
     week_comments = st.session_state.kpi_comments.get(selected_label, {})
@@ -142,11 +143,11 @@ if not df_raw.empty:
         u = "¥" if k=="客単価" else ""
         m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
         
-        # 数値の整形
+        # 数値整形
         val_tgt = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         val_act = fmt_num(av, reached, u)
         
-        # セッションからコメントを取得（改行対応）
+        # コメント取得（改行をHTMLタグに変換）
         comment = week_comments.get(k, "").replace("\n", "<br>")
         
         k_rows += f'''
