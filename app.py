@@ -5,27 +5,26 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # --- 1. ページ基本設定 ---
-# ページ設定（タイトルは動的に変わるため、後ほど再設定）
-st.set_page_config(layout="wide")
+# ページ設定を一番最初に配置（エラー回避のため）
+st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
 # セッション状態の初期化
 if 'needs_refresh' not in st.session_state:
     st.session_state.needs_refresh = False
 
 # --- 2. Googleスプレッドシート接続設定 ---
-# Secretsから認証情報を取得して接続
 try:
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds_dict = st.secrets["gcp_service_account"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(creds)
 
-    # 【重要】新しく作った保存用スプレッドシートのIDに書き換えてください
-    SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
+    # 【重要】作成した新しいスプレッドシートのIDをここに貼り付けてください
+    SAVE_SHEET_ID = "ここに新しいスプレッドシートのIDを貼り付け"
     sh = gc.open_by_key(SAVE_SHEET_ID)
     ws = sh.worksheet("シート1") 
 except Exception as e:
-    st.error(f"Googleスプレッドシートへの接続に失敗しました。Secretsの設定や権限を確認してください。: {e}")
+    st.error(f"スプレッドシート接続エラー: Secretsの設定またはスプレッドシートIDを確認してください。")
     st.stop()
 
 # 元の数値データ読み込み用URL
@@ -71,7 +70,7 @@ def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
     else:
         ws.append_row(new_row)
 
-# --- 4. データ準備 ---
+# --- 4. データ読み込み ---
 df_raw = load_raw_data()
 saved_dict = get_saved_data()
 
@@ -82,8 +81,10 @@ if not df_raw.empty:
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_label]
     
-    # 保存済みデータの取得
-    current_data = saved_dict.get(selected_label, {"座数理由": "", "客単価理由":"", "CVR理由":"", "客数理由":"", "総評":""})
+    # 保存済みデータの取得（キーが存在しない場合は空の辞書を返す）
+    current_data = saved_dict.get(selected_label, {
+        "週": selected_label, "座数理由": "", "客単価理由": "", "CVR理由": "", "客数理由": "", "総評": ""
+    })
     
     st.sidebar.markdown("---")
     st.sidebar.subheader(f"📝 {selected_label} 共有・保存")
@@ -112,7 +113,7 @@ if not df_raw.empty:
         .base-table th {{ background-color: rgba(88, 181, 202, 0.9); color: white; padding: 8px; border: 1px solid #eeece1; text-align: center; }}
         .base-table td {{ border: 1px solid #eeece1; padding: 8px; text-align: center; }}
         .kpi-table th {{ background-color: #3F484F !important; color: #eeece1 !important; }}
-        .comment-cell {{ text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; font-size: 0.9em; }}
+        .comment-cell {{ text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; font-size: 0.9em; color: #3b484e; }}
         .summary-box {{ background-color: #e1f2f7; border: 1px solid #58b5ca; padding: 15px; border-radius: 4px; white-space: pre-wrap; color: #3b484e; line-height: 1.6; }}
         h4 {{ color: #3b484e; border-bottom: 2px solid #fcde9c; padding-bottom: 5px; margin-top: 25px; }}
     </style>
@@ -120,7 +121,7 @@ if not df_raw.empty:
 
     st.title("📊 ストアカルテ2026年3月")
 
-    # --- 6. 各セクションの表示 ---
+    # --- 6. 各セクションの表示ヘルパー ---
     def fmt_num_h(val, is_reached, unit=""):
         txt = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
         cls = "reach" if is_reached else "unmet"
@@ -157,10 +158,15 @@ if not df_raw.empty:
         u = "¥" if k == "客単価" else ""
         m = "◯" if tr >= 100 else "△" if tr >= 90 else "✕"
         
-        # 目標値の整形を修正
-        val_tgt_display = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        
+        # 目標数値の整形（エラー回避のために事前に文字列化）
+        if tv >= 100:
+            val_tgt_display = f"{u}{tv:,.0f}"
+        else:
+            val_tgt_display = f"{u}{tv:.2f}"
+            
+        # 理由の取得
         reason = str(current_data.get(r_key, "")).replace("\n", "<br>")
+        
         k_rows += f'''
         <tr>
             <td><span class="eval-mark">{m}</span></td>
