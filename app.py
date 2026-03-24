@@ -89,4 +89,53 @@ if not df_raw.empty:
     <h4>All Stores ※FC excluded</h4>
     <table class="base-table">
         <tr><th>月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{g2_act:,.0f}</td></tr>
-        <tr><th>
+        <tr><th>月次目標</th><td>{g3_tgt:,.0f}</td><th>月次予算</th><td>{i3_bg:,.0f}</td><th>前年受注額</th><td>{k3_ly:,.0f}</td></tr>
+        <tr><th>目標比</th><td>{fmt_ratio_span(g2_act/g3_tgt*100 if g3_tgt else 0, g2_act>=g3_tgt)}</td><th>予算比</th><td>{fmt_ratio_span(g2_act/i3_bg*100 if i3_bg else 0, g2_act>=i3_bg)}</td><th>前年比</th><td>{fmt_ratio_span(g2_act/k3_ly*100 if k3_ly else 0, g2_act>=k3_ly)}</td></tr>
+        <tr><th>差額</th><td>{fmt_num_span(g2_act-g3_tgt, g2_act>=g3_tgt)}</td><th>差額</th><td>{fmt_num_span(g2_act-i3_bg, g2_act>=i3_bg)}</td><th>差額</th><td>{fmt_num_span(g2_act-k3_ly, g2_act>=k3_ly)}</td></tr>
+    </table>
+    '''
+    st.markdown(all_stores_html, unsafe_allow_html=True)
+
+    # 4. KPI別
+    k_map = {"座数":(44,48,52), "客単価":(47,51,55), "CVR":(45,49,53), "客数":(46,50,54)}
+    k_rows_html = ""
+    week_comments = st.session_state.kpi_comments.get(selected_label, {})
+
+    for k, (ac, tc, lc) in k_map.items():
+        av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
+        tr = av/tv*100 if tv else 0
+        lr = av/lv*100 if lv else 0
+        u = "¥" if k=="客単価" else ""
+        m = "◯" if tr>=100 else "△" if tr>=90 else "✕"
+        
+        # 数値整形（spanタグを埋め込む）
+        val_tgt = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
+        val_act = fmt_num_span(av, av>=tv, u)
+        ratio_tr = fmt_ratio_span(tr, tr>=100)
+        ratio_lr = fmt_ratio_span(lr, lr>=100)
+        
+        # 備考（サイドバーからの入力）
+        comment = week_comments.get(k, "").replace("\n", "<br>")
+        
+        k_rows_html += f'''
+        <tr>
+            <td><span class="eval-mark">{m}</span></td>
+            <td>{k}</td>
+            <td>{val_tgt}</td>
+            <td>{val_act}</td>
+            <td>{ratio_tr}</td>
+            <td>{ratio_lr}</td>
+            <td class="comment-cell">{comment}</td>
+        </tr>
+        '''
+    
+    st.markdown(f'''
+    <h4>KPI別</h4>
+    <table class="base-table kpi-table">
+        <tr><th style="width:40px;">評</th><th style="width:80px;">KPI</th><th style="width:100px;">目標</th><th style="width:100px;">実績</th><th style="width:80px;">目標比</th><th style="width:80px;">LY比</th><th>備考</th></tr>
+        {k_rows_html}
+    </table>
+    ''', unsafe_allow_html=True)
+
+else:
+    st.warning("データを読み込めませんでした。")
