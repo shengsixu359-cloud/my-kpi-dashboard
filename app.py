@@ -20,7 +20,7 @@ try:
     gc = gspread.authorize(creds)
 
     # 【重要】作成した新しいスプレッドシートのIDをここに貼り付けてください
-    SAVE_SHEET_ID = "ここに新しいスプレッドシートのIDを貼り付け"
+    SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
     sh = gc.open_by_key(SAVE_SHEET_ID)
     ws = sh.worksheet("シート1") 
 except Exception as e:
