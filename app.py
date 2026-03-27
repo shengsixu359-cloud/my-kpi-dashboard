@@ -14,6 +14,7 @@ try:
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(creds)
 
+    # 保存用スプレッドシート
     SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
     sh = gc.open_by_key(SAVE_SHEET_ID)
     ws = sh.worksheet("シート1") 
@@ -21,7 +22,7 @@ except Exception as e:
     st.error(f"接続エラー: SecretsまたはスプレッドシートIDを確認してください。")
     st.stop()
 
-# --- 3. 引用元データ設定 ---
+# --- 3. 引用元データの設定 ---
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
 MONTH_CONFIG = {
     "2026": {
@@ -44,15 +45,18 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 4. テキスト読み書き (シンプルかつ確実な方式) ---
-def get_saved_text_stable(search_key):
+# --- 4. テキスト読み書きロジック (最優先修正箇所) ---
+def fetch_text_directly(search_key):
+    """スプレッドシートの全行を走査し、A列が一致する行のデータを直接返す"""
     try:
-        # キャッシュを通さず直接全行取得
-        all_rows = ws.get_all_values()
+        # get_all_recordsではなくget_all_valuesを使うことでヘッダー依存を排除
+        all_data = ws.get_all_values()
+        # デフォルト値（空欄）
         res = {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
-        for row in all_rows:
-            # A列(row[0])が選択中のキーと完全一致するかチェック
+        
+        for row in all_data:
             if row and str(row[0]).strip() == str(search_key).strip():
+                # 列番号で直接指定（B列=1, C列=2...）
                 res["zasu"] = row[1] if len(row) > 1 else ""
                 res["tanka"] = row[2] if len(row) > 2 else ""
                 res["cvr"] = row[3] if len(row) > 3 else ""
@@ -88,11 +92,11 @@ sel_week = st.sidebar.selectbox("週", list(week_row_map.keys()))
 # 検索・保存用の「絶対キー」
 current_key = f"{sel_year}-{sel_month}-{sel_week}"
 
-# 常に最新テキストをスプレッドシートから取得
-current_txt = get_saved_text_stable(current_key)
+# 最新テキストを「キャッシュなし」で直接取得（リブート対策）
+current_txt = fetch_text_directly(current_key)
 
 with st.sidebar.form("input_form"):
-    st.info(f"表示中: {current_key}")
+    st.info(f"📍 表示中のデータID: {current_key}")
     r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
     r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
     r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
@@ -101,7 +105,7 @@ with st.sidebar.form("input_form"):
     
     if st.form_submit_button("全ユーザーに共有保存"):
         save_to_sheet_stable(current_key, [r_zasu, r_tanka, r_cvr, r_kyaku, sum_text])
-        st.cache_data.clear()
+        st.cache_data.clear() # 数値データのキャッシュをクリア
         st.rerun()
 
 # --- 6. メイン表示 ---
@@ -120,7 +124,7 @@ if not df_raw.empty:
         .base-table th { background-color: rgba(88, 181, 202, 0.9); color: white; padding: 8px; border: 1px solid #eeece1; text-align: center; }
         .base-table td { border: 1px solid #eeece1; padding: 8px; text-align: center; }
         .kpi-table th { background-color: #3F484F !important; color: #eeece1 !important; }
-        .comment-cell { text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; color: #3b484e; }
+        .comment-cell { text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; color: #3b484e; font-size: 0.95em; }
         .summary-box { background-color: #e1f2f7; border: 1px solid #58b5ca; padding: 15px; border-radius: 4px; white-space: pre-wrap; color: #3b484e; min-height: 80px; }
         h4 { color: #3b484e; border-bottom: 2px solid #fcde9c; padding-bottom: 5px; margin-top: 25px; }
     </style>
@@ -135,7 +139,7 @@ if not df_raw.empty:
         cls = "reach" if cond else "unmet"
         return f'<span class="{cls}">{val:.1f}%</span>'
 
-    # --- All Stores ---
+    # All Stores
     act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     tgt, bgt, ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     mt, mb, ml = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
@@ -150,7 +154,7 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- WEEKサマリー ---
+    # Weeklyサマリー
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     w_rows = ""
     for w_n, r_i in week_row_map.items():
@@ -158,7 +162,7 @@ if not df_raw.empty:
         w_rows += f'<tr><td>{w_n}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_v(wa-wt, wa>=wt)}</td><td>{fmt_p(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_v(wa-wb, wa>=wb)}</td><td>{fmt_p(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_p(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
 
-    # --- KPI別 ---
+    # KPI別
     row_idx = week_row_map[sel_week]
     st.markdown(f"<h4>KPI別 ({sel_week})</h4>", unsafe_allow_html=True)
     k_data = [("座数", 44, 48, 52, "zasu"), ("客単価", 47, 51, 55, "tanka"), ("CVR", 45, 49, 53, "cvr"), ("客数", 46, 50, 54, "kyaku")]
@@ -168,12 +172,15 @@ if not df_raw.empty:
         u = "¥" if k_n == "客単価" else ""
         m = "◯" if (av/tv if tv else 0) >= 1 else "△" if (av/tv if tv else 0) >= 0.9 else "✕"
         t_s = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        reason = str(current_txt[t_k]).replace("\n", "<br>")
-        k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
+        
+        # テキストデータの流し込み
+        reason_text = str(current_txt[t_k]).replace("\n", "<br>")
+        k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason_text}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
-    # --- 総評 ---
+    # 総評
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
-    st.markdown(f'<div class="summary-box">{current_txt["summary"]}</div>', unsafe_allow_html=True)
+    final_summary = str(current_txt["summary"]) if current_txt["summary"] else "(未入力)"
+    st.markdown(f'<div class="summary-box">{final_summary}</div>', unsafe_allow_html=True)
 else:
-    st.warning("データを読み込めませんでした。")
+    st.warning("数値データを読み込めませんでした。")
