@@ -8,18 +8,19 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="ストアカルテ", layout="wide")
 
 # --- 2. Googleスプレッドシート接続設定 ---
-try:
-    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds_dict = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    gc = gspread.authorize(creds)
+@st.cache_resource
+def get_gspread_client():
+    try:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"認証エラー: {e}")
+        return None
 
-    SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
-    sh = gc.open_by_key(SAVE_SHEET_ID)
-    ws = sh.worksheet("シート1") 
-except Exception as e:
-    st.error(f"接続エラー: SecretsまたはスプレッドシートIDを確認してください。")
-    st.stop()
+gc = get_gspread_client()
+SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
 
 # --- 3. 引用元データ設定 ---
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
@@ -44,48 +45,56 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 4. テキスト読み書き (直接アクセス・強制変換版) ---
-def fetch_text_no_cache(search_key):
-    """キャッシュを通さず、スプレッドシートから直接最新データを1行取得する"""
+# --- 4. テキスト読み書き (キャッシュを一切使わない最強版) ---
+def fetch_sheet_text_live(search_key):
+    """スプレッドシートから生の値を直接取得する"""
     try:
-        # 毎回最新の全データを取得
+        # 毎回最新のコネクションを確立
+        sh = gc.open_by_key(SAVE_SHEET_ID)
+        ws = sh.worksheet("シート1")
         all_data = ws.get_all_values()
-        # デフォルト値
-        res = {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
         
+        res = {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
         search_key_clean = str(search_key).strip()
         
         for row in all_data:
             if row and str(row[0]).strip() == search_key_clean:
-                # 取得した値をすべて文字列(str)に強制変換し、Noneを空文字に置換
-                res["zasu"] = str(row[1]) if len(row) > 1 and row[1] is not None else ""
-                res["tanka"] = str(row[2]) if len(row) > 2 and row[2] is not None else ""
+                res["zasu"] = str(row[1]) if len(row) > 1 else ""
+                res["tanka"] = str(row[2]) if len(row) > 2 else ""
                 res["cvr"] = str(row[3]) if len(row) > 3 else ""
-                res["kyaku"] = str(row[4]) if len(row) > 4 else ""
-                res["summary"] = str(row[5]) if len(row) > 5 else ""
-                break
+                res["kyaku"] = row[4] if len(row) > 4 else ""
+                res["summary"] = row[5] if len(row) > 5 else ""
+                return res
         return res
-    except:
+    except Exception as e:
+        st.sidebar.error(f"読込失敗: {e}")
         return {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
 
-def save_to_sheet_stable(search_key, data_list):
-    all_values = ws.get_all_values()
-    target_row_idx = -1
-    search_key_clean = str(search_key).strip()
-    
-    for i, row in enumerate(all_values):
-        if row and str(row[0]).strip() == search_key_clean:
-            target_row_idx = i + 1
-            break
-    
-    # 書き込む内容をすべて文字列にする
-    final_row = [search_key_clean] + [str(d) for d in data_list]
-    if target_row_idx != -1:
-        ws.update(range_name=f"A{target_row_idx}:F{target_row_idx}", values=[final_row])
-    else:
-        ws.append_row(final_row)
+def save_to_sheet_live(search_key, data_list):
+    try:
+        sh = gc.open_by_key(SAVE_SHEET_ID)
+        ws = sh.worksheet("シート1")
+        all_values = ws.get_all_values()
+        
+        target_row = -1
+        search_key_clean = str(search_key).strip()
+        
+        for i, row in enumerate(all_values):
+            if row and str(row[0]).strip() == search_key_clean:
+                target_row = i + 1
+                break
+        
+        final_row = [search_key_clean] + [str(d) for d in data_list]
+        if target_row != -1:
+            ws.update(range_name=f"A{target_row}:F{target_row}", values=[final_row])
+        else:
+            ws.append_row(final_row)
+        return True
+    except Exception as e:
+        st.error(f"保存失敗: {e}")
+        return False
 
-# --- 5. UI設定とデータ同期 ---
+# --- 5. サイドバー UI ---
 st.sidebar.header("📅 期間選択")
 sel_year = st.sidebar.selectbox("西暦", list(MONTH_CONFIG.keys()))
 sel_month = st.sidebar.selectbox("月", list(MONTH_CONFIG[sel_year].keys()))
@@ -93,14 +102,14 @@ sel_month = st.sidebar.selectbox("月", list(MONTH_CONFIG[sel_year].keys()))
 week_row_map = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
 sel_week = st.sidebar.selectbox("週", list(week_row_map.keys()))
 
-# 検索用の絶対キー
+# 検索用キーの作成
 current_key = f"{sel_year}-{sel_month}-{sel_week}"
 
-# ★ ここで直接読み込みを実行 (リブートされても最新を取得)
-current_txt = fetch_text_no_cache(current_key)
+# ★ フォームの外で最新テキストを読み込む (重要)
+current_txt = fetch_sheet_text_live(current_key)
 
 with st.sidebar.form("input_form"):
-    st.info(f"📍 読込キー: {current_key}")
+    st.info(f"📍 読込中キー: {current_key}")
     r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
     r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
     r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
@@ -108,18 +117,19 @@ with st.sidebar.form("input_form"):
     sum_text = st.text_area("■総評 / 今週のアクション", value=current_txt["summary"], height=150)
     
     if st.form_submit_button("全ユーザーに共有保存"):
-        save_to_sheet_stable(current_key, [r_zasu, r_tanka, r_cvr, r_kyaku, sum_text])
-        st.cache_data.clear() # 数値データのキャッシュをリセット
-        st.rerun()
+        if save_to_sheet_live(current_key, [r_zasu, r_tanka, r_cvr, r_kyaku, sum_text]):
+            st.success("保存完了！")
+            st.cache_data.clear()
+            st.rerun()
 
-# --- 6. メイン表示 (数値・レイアウト) ---
+# --- 6. メイン表示 ---
 current_gid = MONTH_CONFIG[sel_year][sel_month]["gid"]
 df_raw = load_raw_data(current_gid)
 
 if not df_raw.empty:
     st.title(f"📊 ストアカルテ {sel_year}年{sel_month}")
     
-    # CSS設定 (カラーパレット適用)
+    # CSS
     st.markdown('''
     <style>
         html, body, [class*="css"] { font-family: "Meiryo", sans-serif; color: #3b484e; }
@@ -129,7 +139,7 @@ if not df_raw.empty:
         .base-table th { background-color: rgba(88, 181, 202, 0.9); color: white; padding: 8px; border: 1px solid #eeece1; text-align: center; }
         .base-table td { border: 1px solid #eeece1; padding: 8px; text-align: center; }
         .kpi-table th { background-color: #3F484F !important; color: #eeece1 !important; }
-        .comment-cell { text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; color: #3b484e; min-width: 250px; }
+        .comment-cell { text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; color: #3b484e; font-size: 0.95em; }
         .summary-box { background-color: #e1f2f7; border: 1px solid #58b5ca; padding: 15px; border-radius: 4px; white-space: pre-wrap; color: #3b484e; min-height: 80px; }
         h4 { color: #3b484e; border-bottom: 2px solid #fcde9c; padding-bottom: 5px; margin-top: 25px; }
     </style>
@@ -178,14 +188,12 @@ if not df_raw.empty:
         m = "◯" if (av/tv if tv else 0) >= 1 else "△" if (av/tv if tv else 0) >= 0.9 else "✕"
         t_s = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         
-        # 理由テキストの埋め込み (str()で念押し)
-        reason_html = str(current_txt[t_k]).replace("\n", "<br>")
-        k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason_html}</td></tr>'
+        reason = str(current_txt[t_k]).replace("\n", "<br>")
+        k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
     # 総評
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
-    final_summary = str(current_txt["summary"]) if current_txt["summary"] else "(未入力)"
-    st.markdown(f'<div class="summary-box">{final_summary}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="summary-box">{str(current_txt["summary"])}</div>', unsafe_allow_html=True)
 else:
     st.warning("数値データを読み込めませんでした。")
