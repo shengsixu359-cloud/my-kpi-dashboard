@@ -91,7 +91,7 @@ if not df_raw.empty:
             st.cache_data.clear()
             st.rerun()
 
-    # --- 5. デザイン (指定カラー) ---
+    # --- 5. デザイン (CSS) ---
     st.markdown(f'''
     <style>
         html, body, [class*="css"] {{ font-family: "Meiryo", sans-serif; color: #3b484e; }}
@@ -118,13 +118,13 @@ if not df_raw.empty:
     def fmt_ratio_h(val, is_reached):
         return f'<span class="{"reach" if is_reached else "unmet"}">{val:.1f}%</span>'
 
-    # --- 7. All Stores ---
+    # --- 7. All Stores (セクションを独立させて描画) ---
     g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     g6_mtd_t, i6_mtd_b, k6_mtd_l = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
 
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
-    st.markdown(f'''
+    all_stores_html = f'''
     <table class="base-table">
         <tr><th style="background-color:#606970;">月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{g2_act:,.0f}</td></tr>
         <tr><th>月次目標</th><td>{g3_tgt:,.0f}</td><th>月次予算</th><td>{i3_bg:,.0f}</td><th>前年受注額</th><td>{k3_ly:,.0f}</td></tr>
@@ -134,26 +134,28 @@ if not df_raw.empty:
         <tr><th>MTD目標 %</th><td>{fmt_ratio_h(g2_act/g6_mtd_t*100 if g6_mtd_t else 0, g2_act>=g6_mtd_t)}</td><th>MTD予算 %</th><td>{fmt_ratio_h(g2_act/i6_mtd_b*100 if i6_mtd_b else 0, g2_act>=i6_mtd_b)}</td><th>MTD前年 %</th><td>{fmt_ratio_h(g2_act/k6_mtd_l*100 if k6_mtd_l else 0, g2_act>=k6_mtd_l)}</td></tr>
         <tr><th>MTD目標 差額</th><td>{fmt_num_h(g2_act-g6_mtd_t, g2_act>=g6_mtd_t)}</td><th>MTD予算 差額</th><td>{fmt_num_h(g2_act-i6_mtd_b, g2_act>=i6_mtd_b)}</td><th>MTD前年 差額</th><td>{fmt_num_h(g2_act-k6_mtd_l, g2_act>=k6_mtd_l)}</td></tr>
     </table>
-    ''', unsafe_allow_html=True)
+    '''
+    st.markdown(all_stores_html, unsafe_allow_html=True)
 
-    # --- 8. KPI別 ---
+    # --- 8. KPI別 (セクションを独立させて描画) ---
     k_map = {
         "座数": (44, 48, 52, "座数理由"),
         "客単価": (47, 51, 55, "客単価理由"),
         "CVR": (45, 49, 53, "CVR理由"),
         "客数": (46, 50, 54, "客数理由")
     }
-    k_rows_html = ""
+    
+    k_rows = ""
     for k, (ac, tc, lc, r_key) in k_map.items():
         av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
         tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
         u = "¥" if k == "客単価" else ""
         m = "◯" if tr >= 100 else "△" if tr >= 90 else "✕"
-        
         val_tgt_display = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        reason = str(current_data.get(r_key, "")).replace("\n", "<br>")
+        reason_val = str(current_data.get(r_key, "")).replace("\n", "<br>")
         
-        k_rows_html += f'''
+        # 1行ずつ組み立て
+        k_rows += f'''
         <tr>
             <td><span class="eval-mark">{m}</span></td>
             <td>{k}</td>
@@ -161,21 +163,30 @@ if not df_raw.empty:
             <td>{fmt_num_h(av, av >= tv, u)}</td>
             <td>{fmt_ratio_h(tr, tr >= 100)}</td>
             <td>{fmt_ratio_h(lr, lr >= 100)}</td>
-            <td class="comment-cell">{reason}</td>
-        </tr>
-        '''
-    
-    st.markdown(f'''
-    <h4>KPI別</h4>
+            <td class="comment-cell">{reason_val}</td>
+        </tr>'''
+
+    st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
+    kpi_table_full = f'''
     <table class="base-table kpi-table">
-        <tr><th style="width:40px;">評</th><th style="width:80px;">KPI</th><th style="width:100px;">目標</th><th style="width:100px;">実績</th><th style="width:80px;">目標比</th><th style="width:80px;">LY比</th><th>理由</th></tr>
-        {k_rows_html}
+        <tr>
+            <th style="width:40px;">評</th>
+            <th style="width:80px;">KPI</th>
+            <th style="width:100px;">目標</th>
+            <th style="width:100px;">実績</th>
+            <th style="width:80px;">目標比</th>
+            <th style="width:80px;">LY比</th>
+            <th>理由</th>
+        </tr>
+        {k_rows}
     </table>
-    ''', unsafe_allow_html=True)
+    '''
+    st.markdown(kpi_table_full, unsafe_allow_html=True)
 
     # --- 9. 総評 ---
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
-    st.markdown(f'<div class="summary-box">{current_data.get("総評", "")}</div>', unsafe_allow_html=True)
+    final_summary = str(current_data.get("総評", ""))
+    st.markdown(f'<div class="summary-box">{final_summary}</div>', unsafe_allow_html=True)
 
 else:
-    st.warning("データを読み込めませんでした。")
+    st.warning("数値データを読み込めませんでした。")
