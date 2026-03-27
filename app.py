@@ -39,27 +39,27 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 3. テキストデータの読み込み（列番号指定方式） ---
-def get_saved_data_v2():
-    """ヘッダー名に依存せず列番号でデータを取得する"""
+# --- 3. テキストデータの読み込み（キャッシュなし・直接取得） ---
+def get_current_week_text(target_week):
+    """スプレッドシートから特定の週のテキストを直接取得する"""
     try:
         rows = ws.get_all_values()
-        if len(rows) <= 1: return {}
+        # 初期値（空欄）
+        res = {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
         
-        data_dict = {}
-        for row in rows[1:]: # 2行目以降をループ
-            if not row: continue
-            week_key = row[0] # A列: 週
-            data_dict[week_key] = {
-                "zasu": row[1] if len(row) > 1 else "",    # B列
-                "tanka": row[2] if len(row) > 2 else "",   # C列
-                "cvr": row[3] if len(row) > 3 else "",     # D列
-                "kyaku": row[4] if len(row) > 4 else "",   # E列
-                "summary": row[5] if len(row) > 5 else ""  # F列
-            }
-        return data_dict
+        if len(rows) <= 1: return res
+        
+        for row in rows[1:]:
+            if len(row) > 0 and row[0] == target_week:
+                res["zasu"] = row[1] if len(row) > 1 else ""
+                res["tanka"] = row[2] if len(row) > 2 else ""
+                res["cvr"] = row[3] if len(row) > 3 else ""
+                res["kyaku"] = row[4] if len(row) > 4 else ""
+                res["summary"] = row[5] if len(row) > 5 else ""
+                break
+        return res
     except:
-        return {}
+        return {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
 
 def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
     all_data = ws.get_all_values()
@@ -76,7 +76,6 @@ def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
 
 # --- 4. データ準備 ---
 df_raw = load_raw_data()
-saved_dict = get_saved_data_v2()
 
 if not df_raw.empty:
     # サイドバー
@@ -85,13 +84,13 @@ if not df_raw.empty:
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
     row_idx = week_map[selected_label]
     
-    # 選択中の週のテキストを抽出
-    current_txt = saved_dict.get(selected_label, {"zasu":"", "tanka":"", "cvr":"", "kyaku":"", "summary":""})
+    # 【重要】選択した週のテキストを「今」スプレッドシートから取ってくる
+    current_txt = get_current_week_text(selected_label)
     
     with st.sidebar.form("input_form"):
         r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
         r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
-        r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
+        r_cvr = st.text_area("CVR의 理由", value=current_txt["cvr"])
         r_kyaku = st.text_area("客数の理由", value=current_txt["kyaku"])
         sum_text = st.text_area("■総評 / 今週のアクション", value=current_txt["summary"], height=150)
         if st.form_submit_button("全ユーザーに共有保存"):
@@ -163,15 +162,15 @@ if not df_raw.empty:
         m = "◯" if (av/tv if tv else 0) >= 1 else "△" if (av/tv if tv else 0) >= 0.9 else "✕"
         t_s = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         
-        # 保存された理由を表示
-        reason = str(current_txt[r_k]).replace("\n", "<br>")
-        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
+        # 理由をHTML用に整形
+        reason_html = str(current_txt[r_k]).replace("\n", "<br>")
+        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason_html}</td></tr>'
 
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
     # --- 9. 総評 ---
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
-    st.markdown(f'<div class="summary-box">{current_txt["summary"]}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="summary-box">{str(current_txt["summary"])}</div>', unsafe_allow_html=True)
 
 else:
     st.warning("データを読み込めませんでした。")
