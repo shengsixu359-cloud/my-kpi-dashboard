@@ -7,10 +7,6 @@ from google.oauth2.service_account import Credentials
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="ストアカルテ2026年3月", layout="wide")
 
-# セッション状態の初期化
-if 'needs_refresh' not in st.session_state:
-    st.session_state.needs_refresh = False
-
 # --- 2. Googleスプレッドシート接続設定 ---
 try:
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -23,10 +19,10 @@ try:
     sh = gc.open_by_key(SAVE_SHEET_ID)
     ws = sh.worksheet("シート1") 
 except Exception as e:
-    st.error(f"スプレッドシート接続エラー: Secretsの設定またはスプレッドシートIDを確認してください。")
+    st.error(f"スプレッドシート接続エラー: SecretsまたはIDを確認してください。")
     st.stop()
 
-# 元の数値データ読み込み用URL
+# 数値データ読み込み用URL
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
 SHEET_GID = "1502960872"
 
@@ -44,7 +40,6 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 3. 保存・読込ロジック ---
 def get_saved_data():
     try:
         data = ws.get_all_records()
@@ -65,11 +60,12 @@ def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
     else:
         ws.append_row(new_row)
 
-# --- 4. データ準備 ---
+# --- 3. データ準備 ---
 df_raw = load_raw_data()
 saved_dict = get_saved_data()
 
 if not df_raw.empty:
+    # サイドバー
     st.sidebar.header("📅 期間選択")
     week_map = {"W1 (3/1)": 57, "W2 (3/2-3/8)": 58, "W3 (3/9-3/15)": 59, "W4 (3/16-3/22)": 60, "W5 (3/23-3/29)": 61, "W6 (3/30-3/31)": 62}
     selected_label = st.sidebar.selectbox("表示週を選択", list(week_map.keys()))
@@ -77,8 +73,6 @@ if not df_raw.empty:
     
     current_data = saved_dict.get(selected_label, {"座数理由": "", "客単価理由":"", "CVR理由":"", "客数理由":"", "総評":""})
     
-    st.sidebar.markdown("---")
-    st.sidebar.subheader(f"📝 {selected_label} 共有・保存")
     with st.sidebar.form("input_form"):
         r_zasu = st.text_area("座数の理由", value=current_data.get("座数理由",""))
         r_tanka = st.text_area("客単価の理由", value=current_data.get("客単価理由",""))
@@ -87,11 +81,10 @@ if not df_raw.empty:
         sum_text = st.text_area("■総評 / 今週のアクション", value=current_data.get("総評",""), height=150)
         if st.form_submit_button("全ユーザーに共有保存"):
             save_to_sheet(selected_label, r_zasu, r_tanka, r_cvr, r_kyaku, sum_text)
-            st.success("保存しました！")
             st.cache_data.clear()
             st.rerun()
 
-    # --- 5. デザイン (CSS) ---
+    # --- 4. スタイル設定 ---
     st.markdown(f'''
     <style>
         html, body, [class*="css"] {{ font-family: "Meiryo", sans-serif; color: #3b484e; }}
@@ -102,42 +95,42 @@ if not df_raw.empty:
         .base-table th {{ background-color: rgba(88, 181, 202, 0.9); color: white; padding: 8px; border: 1px solid #eeece1; text-align: center; }}
         .base-table td {{ border: 1px solid #eeece1; padding: 8px; text-align: center; }}
         .kpi-table th {{ background-color: #3F484F !important; color: #eeece1 !important; }}
-        .comment-cell {{ text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; font-size: 0.9em; color: #3b484e; }}
-        .summary-box {{ background-color: #e1f2f7; border: 1px solid #58b5ca; padding: 15px; border-radius: 4px; white-space: pre-wrap; color: #3b484e; line-height: 1.6; }}
-        h4 {{ color: #3b484e; border-bottom: 2px solid #fcde9c; padding-bottom: 5px; margin-top: 25px; }}
+        .comment-cell {{ text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; color: #3b484e; }}
+        .summary-box {{ background-color: #e1f2f7; border: 1px solid #58b5ca; padding: 15px; border-radius: 4px; white-space: pre-wrap; color: #3b484e; }}
+        h4 {{ color: #3b484e; border-bottom: 2px solid #fcde9c; padding-bottom: 5px; }}
     </style>
     ''', unsafe_allow_html=True)
 
     st.title("📊 ストアカルテ2026年3月")
 
-    # --- 6. ヘルパー関数 ---
-    def fmt_num_h(val, is_reached, unit=""):
-        txt = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
-        return f'<span class="{"reach" if is_reached else "unmet"}">{txt}</span>'
+    def fmt_val(v, cond, unit=""):
+        cls = "reach" if cond else "unmet"
+        txt = f"{unit}{v:,.0f}" if abs(v) >= 100 else f"{unit}{v:.2f}"
+        return f'<span class="{cls}">{txt}</span>'
 
-    def fmt_ratio_h(val, is_reached):
-        return f'<span class="{"reach" if is_reached else "unmet"}">{val:.1f}%</span>'
+    def fmt_pct(v, cond):
+        cls = "reach" if cond else "unmet"
+        return f'<span class="{cls}">{v:.1f}%</span>'
 
-    # --- 7. All Stores (セクションを独立させて描画) ---
-    g2_act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
-    g3_tgt, i3_bg, k3_ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
-    g6_mtd_t, i6_mtd_b, k6_mtd_l = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
+    # --- 5. All Stores ---
+    act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
+    tgt, bgt, ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
+    mt, mb, ml = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
 
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
-    all_stores_html = f'''
+    st.markdown(f'''
     <table class="base-table">
-        <tr><th style="background-color:#606970;">月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{g2_act:,.0f}</td></tr>
-        <tr><th>月次目標</th><td>{g3_tgt:,.0f}</td><th>月次予算</th><td>{i3_bg:,.0f}</td><th>前年受注額</th><td>{k3_ly:,.0f}</td></tr>
-        <tr><th>目標比</th><td>{fmt_ratio_h(g2_act/g3_tgt*100 if g3_tgt else 0, g2_act>=g3_tgt)}</td><th>予算比</th><td>{fmt_ratio_h(g2_act/i3_bg*100 if i3_bg else 0, g2_act>=i3_bg)}</td><th>前年比</th><td>{fmt_ratio_h(g2_act/k3_ly*100 if k3_ly else 0, g2_act>=k3_ly)}</td></tr>
-        <tr><th>差額</th><td>{fmt_num_h(g2_act-g3_tgt, g2_act>=g3_tgt)}</td><th>差額</th><td>{fmt_num_h(g2_act-i3_bg, g2_act>=i3_bg)}</td><th>差額</th><td>{fmt_num_h(g2_act-k3_ly, g2_act>=k3_ly)}</td></tr>
-        <tr><th>MTD目標</th><td>{g6_mtd_t:,.0f}</td><th>MTD予算</th><td>{i6_mtd_b:,.0f}</td><th>MTD前年</th><td>{k6_mtd_l:,.0f}</td></tr>
-        <tr><th>MTD目標 %</th><td>{fmt_ratio_h(g2_act/g6_mtd_t*100 if g6_mtd_t else 0, g2_act>=g6_mtd_t)}</td><th>MTD予算 %</th><td>{fmt_ratio_h(g2_act/i6_mtd_b*100 if i6_mtd_b else 0, g2_act>=i6_mtd_b)}</td><th>MTD前年 %</th><td>{fmt_ratio_h(g2_act/k6_mtd_l*100 if k6_mtd_l else 0, g2_act>=k6_mtd_l)}</td></tr>
-        <tr><th>MTD目標 差額</th><td>{fmt_num_h(g2_act-g6_mtd_t, g2_act>=g6_mtd_t)}</td><th>MTD予算 差額</th><td>{fmt_num_h(g2_act-i6_mtd_b, g2_act>=i6_mtd_b)}</td><th>MTD前年 差額</th><td>{fmt_num_h(g2_act-k6_mtd_l, g2_act>=k6_mtd_l)}</td></tr>
+        <tr><th style="background-color:#606970;">月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{act:,.0f}</td></tr>
+        <tr><th>月次目標</th><td>{tgt:,.0f}</td><th>月次予算</th><td>{bgt:,.0f}</td><th>前年受注</th><td>{ly:,.0f}</td></tr>
+        <tr><th>目標比</th><td>{fmt_pct(act/tgt*100, act>=tgt)}</td><th>予算比</th><td>{fmt_pct(act/bgt*100, act>=bgt)}</td><th>前年比</th><td>{fmt_pct(act/ly*100, act>=ly)}</td></tr>
+        <tr><th>目標差</th><td>{fmt_val(act-tgt, act>=tgt)}</td><th>予算差</th><td>{fmt_val(act-bgt, act>=bgt)}</td><th>前年差</th><td>{fmt_val(act-ly, act>=ly)}</td></tr>
+        <tr><th>MTD目標</th><td>{mt:,.0f}</td><th>MTD予算</th><td>{mb:,.0f}</td><th>MTD前年</th><td>{ml:,.0f}</td></tr>
+        <tr><th>MTD目標%</th><td>{fmt_pct(act/mt*100, act>=mt)}</td><th>MTD予算%</th><td>{fmt_pct(act/mb*100, act>=mb)}</td><th>MTD前年%</th><td>{fmt_pct(act/ml*100, act>=ml)}</td></tr>
     </table>
-    '''
-    st.markdown(all_stores_html, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
 
-    # --- 8. KPI別 (セクションを独立させて描画) ---
+    # --- 6. KPI別 ---
+    st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
     k_map = {
         "座数": (44, 48, 52, "座数理由"),
         "客単価": (47, 51, 55, "客単価理由"),
@@ -145,48 +138,26 @@ if not df_raw.empty:
         "客数": (46, 50, 54, "客数理由")
     }
     
-    k_rows = ""
+    rows = ""
     for k, (ac, tc, lc, r_key) in k_map.items():
         av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
-        tr, lr = (av/tv*100 if tv else 0), (av/lv*100 if lv else 0)
         u = "¥" if k == "客単価" else ""
-        m = "◯" if tr >= 100 else "△" if tr >= 90 else "✕"
-        val_tgt_display = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        reason_val = str(current_data.get(r_key, "")).replace("\n", "<br>")
+        m = "◯" if (av/tv if tv else 0) >= 1 else "△" if (av/tv if tv else 0) >= 0.9 else "✕"
+        t_str = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
+        reason = str(current_data.get(r_key, "")).replace("\n", "<br>")
         
-        # 1行ずつ組み立て
-        k_rows += f'''
-        <tr>
-            <td><span class="eval-mark">{m}</span></td>
-            <td>{k}</td>
-            <td>{val_tgt_display}</td>
-            <td>{fmt_num_h(av, av >= tv, u)}</td>
-            <td>{fmt_ratio_h(tr, tr >= 100)}</td>
-            <td>{fmt_ratio_h(lr, lr >= 100)}</td>
-            <td class="comment-cell">{reason_val}</td>
-        </tr>'''
+        rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{t_str}</td><td>{fmt_val(av, av>=tv, u)}</td><td>{fmt_pct(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_pct(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
 
-    st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
-    kpi_table_full = f'''
+    st.markdown(f'''
     <table class="base-table kpi-table">
-        <tr>
-            <th style="width:40px;">評</th>
-            <th style="width:80px;">KPI</th>
-            <th style="width:100px;">目標</th>
-            <th style="width:100px;">実績</th>
-            <th style="width:80px;">目標比</th>
-            <th style="width:80px;">LY比</th>
-            <th>理由</th>
-        </tr>
-        {k_rows}
+        <tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>
+        {rows}
     </table>
-    '''
-    st.markdown(kpi_table_full, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
 
-    # --- 9. 総評 ---
+    # --- 7. 総評 ---
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
-    final_summary = str(current_data.get("総評", ""))
-    st.markdown(f'<div class="summary-box">{final_summary}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="summary-box">{current_data.get("総評", "")}</div>', unsafe_allow_html=True)
 
 else:
-    st.warning("数値データを読み込めませんでした。")
+    st.warning("データを読み込めませんでした。")
