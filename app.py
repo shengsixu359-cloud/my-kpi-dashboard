@@ -14,6 +14,7 @@ try:
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(creds)
 
+    # 保存用スプレッドシートID
     SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
     sh = gc.open_by_key(SAVE_SHEET_ID)
     ws = sh.worksheet("シート1") 
@@ -21,6 +22,7 @@ except Exception as e:
     st.error(f"スプレッドシート接続エラー: Secretsの設定またはスプレッドシートIDを確認してください。")
     st.stop()
 
+# 元データ(数値)読み込み
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
 SHEET_GID = "1502960872"
 
@@ -38,7 +40,6 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 3. 保存・読込ロジック ---
 def get_saved_data():
     try:
         data = ws.get_all_records()
@@ -59,7 +60,7 @@ def save_to_sheet(week_label, zasu, tanka, cvr, kyaku, summary):
     else:
         ws.append_row(new_row)
 
-# --- 4. データ準備 ---
+# --- 3. データ準備 ---
 df_raw = load_raw_data()
 saved_dict = get_saved_data()
 
@@ -83,7 +84,7 @@ if not df_raw.empty:
             st.cache_data.clear()
             st.rerun()
 
-    # --- 5. デザイン (CSS) ---
+    # --- 4. CSSスタイル ---
     st.markdown(f'''
     <style>
         html, body, [class*="css"] {{ font-family: "Meiryo", sans-serif; color: #3b484e; }}
@@ -102,6 +103,7 @@ if not df_raw.empty:
 
     st.title("📊 ストアカルテ2026年3月")
 
+    # ヘルパー関数
     def fmt_num_h(val, is_reached, unit=""):
         txt = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
         return f'<span class="{"reach" if is_reached else "unmet"}">{txt}</span>'
@@ -109,42 +111,31 @@ if not df_raw.empty:
     def fmt_ratio_h(val, is_reached):
         return f'<span class="{"reach" if is_reached else "unmet"}">{val:.1f}%</span>'
 
-    # --- 6. All Stores ---
+    # --- 5. All Stores ---
     act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     tgt, bgt, ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     mt, mb, ml = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
 
     st.markdown("<h4>All Stores ※FC excluded</h4>", unsafe_allow_html=True)
-    st.markdown(f'''
+    all_html = f'''
     <table class="base-table">
         <tr><th style="background-color:#606970;">月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{act:,.0f}</td></tr>
-        <tr><th>月次目標</th><td>{tgt:,.0f}</td><th>月次予算</th><td>{bgt:,.0f}</td><th>前年受注額</th><td>{ly:,.0f}</td></tr>
+        <tr><th>月次目標</th><td>{tgt:,.0f}</td><th>月次予算</th><td>{bgt:,.0f}</td><th>前年受注</th><td>{ly:,.0f}</td></tr>
         <tr><th>目標比</th><td>{fmt_ratio_h(act/tgt*100 if tgt else 0, act>=tgt)}</td><th>予算比</th><td>{fmt_ratio_h(act/bgt*100 if bgt else 0, act>=bgt)}</td><th>前年比</th><td>{fmt_ratio_h(act/ly*100 if ly else 0, act>=ly)}</td></tr>
-        <tr><th>差額</th><td>{fmt_num_h(act-tgt, act>=tgt)}</td><th>差額</th><td>{fmt_num_h(act-bgt, act>=bgt)}</td><th>差額</th><td>{fmt_num_h(act-ly, act>=ly)}</td></tr>
+        <tr><th>目標差</th><td>{fmt_num_h(act-tgt, act>=tgt)}</td><th>予算差</th><td>{fmt_num_h(act-bgt, act>=bgt)}</td><th>前年差</th><td>{fmt_num_h(act-ly, act>=ly)}</td></tr>
         <tr><th>MTD目標</th><td>{mt:,.0f}</td><th>MTD予算</th><td>{mb:,.0f}</td><th>MTD前年</th><td>{ml:,.0f}</td></tr>
         <tr><th>MTD目標%</th><td>{fmt_ratio_h(act/mt*100 if mt else 0, act>=mt)}</td><th>MTD予算%</th><td>{fmt_ratio_h(act/mb*100 if mb else 0, act>=mb)}</td><th>MTD前年%</th><td>{fmt_ratio_h(act/ml*100 if ml else 0, act>=ml)}</td></tr>
-        <tr><th>MTD目標差額</th><td>{fmt_num_h(act-mt, act>=mt)}</td><th>MTD予算差額</th><td>{fmt_num_h(act-mb, act>=mb)}</td><th>MTD前年差額</th><td>{fmt_num_h(act-ml, act>=ml)}</td></tr>
     </table>
-    ''', unsafe_allow_html=True)
+    '''
+    st.markdown(all_html, unsafe_allow_html=True)
 
-    # --- 7. Weeklyサマリー (復活箇所) ---
+    # --- 6. Weeklyサマリー ---
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     w_rows = ""
     for w_name, r_idx in week_map.items():
         wa, wt, wb, wl = get_score(df_raw, r_idx, 6), get_score(df_raw, r_idx, 7), get_score(df_raw, r_idx, 10), get_score(df_raw, r_idx, 13)
-        w_rows += f'''
-        <tr>
-            <td>{w_name.split()[0]}</td>
-            <td>{wa:,.0f}</td>
-            <td>{wt:,.0f}</td>
-            <td>{fmt_num_h(wa-wt, wa>=wt)}</td>
-            <td>{fmt_ratio_h(wa/wt*100 if wt else 0, wa>=wt)}</td>
-            <td>{wb:,.0f}</td>
-            <td>{fmt_num_h(wa-wb, wa>=wb)}</td>
-            <td>{fmt_ratio_h(wa/wb*100 if wb else 0, wa>=wb)}</td>
-            <td>{wl:,.0f}</td>
-            <td>{fmt_ratio_h(wa/wl*100 if wl else 0, wa>=wl)}</td>
-        </tr>'''
+        w_rows += f'<tr><td>{w_name.split()[0]}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_num_h(wa-wt, wa>=wt)}</td><td>{fmt_ratio_h(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_num_h(wa-wb, wa>=wb)}</td><td>{fmt_ratio_h(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_ratio_h(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
+    
     st.markdown(f'''
     <table class="base-table">
         <tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>
@@ -152,9 +143,14 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- 8. KPI別 ---
+    # --- 7. KPI別 ---
     st.markdown("<h4>KPI別</h4>", unsafe_allow_html=True)
-    k_map = {"座数": (44, 48, 52, "座数理由"), "客単価": (47, 51, 55, "客単価理由"), "CVR": (45, 49, 53, "CVR理由"), "客数": (46, 50, 54, "客数理由")}
+    k_map = {
+        "座数": (44, 48, 52, "座数理由"),
+        "客単価": (47, 51, 55, "客単価理由"),
+        "CVR": (45, 49, 53, "CVR理由"),
+        "客数": (46, 50, 54, "客数理由")
+    }
     k_rows = ""
     for k, (ac, tc, lc, r_key) in k_map.items():
         av, tv, lv = get_score(df_raw, row_idx, ac), get_score(df_raw, row_idx, tc), get_score(df_raw, row_idx, lc)
@@ -164,16 +160,7 @@ if not df_raw.empty:
         t_str = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         reason = str(current_data.get(r_key, "")).replace("\n", "<br>")
         
-        k_rows += f'''
-        <tr>
-            <td><span class="eval-mark">{m}</span></td>
-            <td>{k}</td>
-            <td>{t_str}</td>
-            <td>{fmt_num_h(av, av>=tv, u)}</td>
-            <td>{fmt_ratio_h(av/tv*100 if tv else 0, av>=tv)}</td>
-            <td>{fmt_ratio_h(av/lv*100 if lv else 0, av>=lv)}</td>
-            <td class="comment-cell">{reason}</td>
-        </tr>'''
+        k_rows += f'<tr><td><span class="eval-mark">{m}</span></td><td>{k}</td><td>{t_str}</td><td>{fmt_num_h(av, av>=tv, u)}</td><td>{fmt_ratio_h(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_ratio_h(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
 
     st.markdown(f'''
     <table class="base-table kpi-table">
@@ -182,9 +169,10 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- 9. 総評 ---
+    # --- 8. 総評 ---
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
-    st.markdown(f'<div class="summary-box">{current_data.get("総評", "")}</div>', unsafe_allow_html=True)
+    summary_txt = str(current_data.get("総評", ""))
+    st.markdown(f'<div class="summary-box">{summary_txt}</div>', unsafe_allow_html=True)
 
 else:
     st.warning("データを読み込めませんでした。")
