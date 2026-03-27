@@ -14,7 +14,6 @@ try:
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(creds)
 
-    # 保存用スプレッドシート
     SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
     sh = gc.open_by_key(SAVE_SHEET_ID)
     ws = sh.worksheet("シート1") 
@@ -22,7 +21,7 @@ except Exception as e:
     st.error(f"接続エラー: SecretsまたはスプレッドシートIDを確認してください。")
     st.stop()
 
-# --- 3. 引用元データの設定 ---
+# --- 3. 引用元データ設定 ---
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
 MONTH_CONFIG = {
     "2026": {
@@ -45,23 +44,25 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 4. テキスト読み書きロジック (最優先修正箇所) ---
-def fetch_text_directly(search_key):
-    """スプレッドシートの全行を走査し、A列が一致する行のデータを直接返す"""
+# --- 4. テキスト読み書き (直接アクセス・強制変換版) ---
+def fetch_text_no_cache(search_key):
+    """キャッシュを通さず、スプレッドシートから直接最新データを1行取得する"""
     try:
-        # get_all_recordsではなくget_all_valuesを使うことでヘッダー依存を排除
+        # 毎回最新の全データを取得
         all_data = ws.get_all_values()
-        # デフォルト値（空欄）
+        # デフォルト値
         res = {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
         
+        search_key_clean = str(search_key).strip()
+        
         for row in all_data:
-            if row and str(row[0]).strip() == str(search_key).strip():
-                # 列番号で直接指定（B列=1, C列=2...）
-                res["zasu"] = row[1] if len(row) > 1 else ""
-                res["tanka"] = row[2] if len(row) > 2 else ""
-                res["cvr"] = row[3] if len(row) > 3 else ""
-                res["kyaku"] = row[4] if len(row) > 4 else ""
-                res["summary"] = row[5] if len(row) > 5 else ""
+            if row and str(row[0]).strip() == search_key_clean:
+                # 取得した値をすべて文字列(str)に強制変換し、Noneを空文字に置換
+                res["zasu"] = str(row[1]) if len(row) > 1 and row[1] is not None else ""
+                res["tanka"] = str(row[2]) if len(row) > 2 and row[2] is not None else ""
+                res["cvr"] = str(row[3]) if len(row) > 3 else ""
+                res["kyaku"] = str(row[4]) if len(row) > 4 else ""
+                res["summary"] = str(row[5]) if len(row) > 5 else ""
                 break
         return res
     except:
@@ -70,18 +71,21 @@ def fetch_text_directly(search_key):
 def save_to_sheet_stable(search_key, data_list):
     all_values = ws.get_all_values()
     target_row_idx = -1
+    search_key_clean = str(search_key).strip()
+    
     for i, row in enumerate(all_values):
-        if row and str(row[0]).strip() == str(search_key).strip():
+        if row and str(row[0]).strip() == search_key_clean:
             target_row_idx = i + 1
             break
     
-    final_row = [search_key] + data_list
+    # 書き込む内容をすべて文字列にする
+    final_row = [search_key_clean] + [str(d) for d in data_list]
     if target_row_idx != -1:
         ws.update(range_name=f"A{target_row_idx}:F{target_row_idx}", values=[final_row])
     else:
         ws.append_row(final_row)
 
-# --- 5. サイドバー UI ---
+# --- 5. UI設定とデータ同期 ---
 st.sidebar.header("📅 期間選択")
 sel_year = st.sidebar.selectbox("西暦", list(MONTH_CONFIG.keys()))
 sel_month = st.sidebar.selectbox("月", list(MONTH_CONFIG[sel_year].keys()))
@@ -89,14 +93,14 @@ sel_month = st.sidebar.selectbox("月", list(MONTH_CONFIG[sel_year].keys()))
 week_row_map = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
 sel_week = st.sidebar.selectbox("週", list(week_row_map.keys()))
 
-# 検索・保存用の「絶対キー」
+# 検索用の絶対キー
 current_key = f"{sel_year}-{sel_month}-{sel_week}"
 
-# 最新テキストを「キャッシュなし」で直接取得（リブート対策）
-current_txt = fetch_text_directly(current_key)
+# ★ ここで直接読み込みを実行 (リブートされても最新を取得)
+current_txt = fetch_text_no_cache(current_key)
 
 with st.sidebar.form("input_form"):
-    st.info(f"📍 表示中のデータID: {current_key}")
+    st.info(f"📍 読込キー: {current_key}")
     r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
     r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
     r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
@@ -105,16 +109,17 @@ with st.sidebar.form("input_form"):
     
     if st.form_submit_button("全ユーザーに共有保存"):
         save_to_sheet_stable(current_key, [r_zasu, r_tanka, r_cvr, r_kyaku, sum_text])
-        st.cache_data.clear() # 数値データのキャッシュをクリア
+        st.cache_data.clear() # 数値データのキャッシュをリセット
         st.rerun()
 
-# --- 6. メイン表示 ---
+# --- 6. メイン表示 (数値・レイアウト) ---
 current_gid = MONTH_CONFIG[sel_year][sel_month]["gid"]
 df_raw = load_raw_data(current_gid)
 
 if not df_raw.empty:
     st.title(f"📊 ストアカルテ {sel_year}年{sel_month}")
     
+    # CSS設定 (カラーパレット適用)
     st.markdown('''
     <style>
         html, body, [class*="css"] { font-family: "Meiryo", sans-serif; color: #3b484e; }
@@ -124,7 +129,7 @@ if not df_raw.empty:
         .base-table th { background-color: rgba(88, 181, 202, 0.9); color: white; padding: 8px; border: 1px solid #eeece1; text-align: center; }
         .base-table td { border: 1px solid #eeece1; padding: 8px; text-align: center; }
         .kpi-table th { background-color: #3F484F !important; color: #eeece1 !important; }
-        .comment-cell { text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; color: #3b484e; font-size: 0.95em; }
+        .comment-cell { text-align: left !important; background-color: #fdfcf7 !important; white-space: pre-wrap; vertical-align: middle; color: #3b484e; min-width: 250px; }
         .summary-box { background-color: #e1f2f7; border: 1px solid #58b5ca; padding: 15px; border-radius: 4px; white-space: pre-wrap; color: #3b484e; min-height: 80px; }
         h4 { color: #3b484e; border-bottom: 2px solid #fcde9c; padding-bottom: 5px; margin-top: 25px; }
     </style>
@@ -173,9 +178,9 @@ if not df_raw.empty:
         m = "◯" if (av/tv if tv else 0) >= 1 else "△" if (av/tv if tv else 0) >= 0.9 else "✕"
         t_s = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
         
-        # テキストデータの流し込み
-        reason_text = str(current_txt[t_k]).replace("\n", "<br>")
-        k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason_text}</td></tr>'
+        # 理由テキストの埋め込み (str()で念押し)
+        reason_html = str(current_txt[t_k]).replace("\n", "<br>")
+        k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason_html}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
     # 総評
