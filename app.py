@@ -45,18 +45,14 @@ def get_score(df, row, col):
         return pd.to_numeric(str(val).replace(',','').replace('%','').replace('¥','').replace('円','').strip(), errors='coerce')
     except: return 0
 
-# --- 4. テキスト読み書き (キャッシュを一切使わない最強版) ---
+# --- 4. テキスト読み書き ---
 def fetch_sheet_text_live(search_key):
-    """スプレッドシートから生の値を直接取得する"""
     try:
-        # 毎回最新のコネクションを確立
         sh = gc.open_by_key(SAVE_SHEET_ID)
         ws = sh.worksheet("シート1")
         all_data = ws.get_all_values()
-        
         res = {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
         search_key_clean = str(search_key).strip()
-        
         for row in all_data:
             if row and str(row[0]).strip() == search_key_clean:
                 res["zasu"] = str(row[1]) if len(row) > 1 else ""
@@ -75,15 +71,12 @@ def save_to_sheet_live(search_key, data_list):
         sh = gc.open_by_key(SAVE_SHEET_ID)
         ws = sh.worksheet("シート1")
         all_values = ws.get_all_values()
-        
         target_row = -1
         search_key_clean = str(search_key).strip()
-        
         for i, row in enumerate(all_values):
             if row and str(row[0]).strip() == search_key_clean:
                 target_row = i + 1
                 break
-        
         final_row = [search_key_clean] + [str(d) for d in data_list]
         if target_row != -1:
             ws.update(range_name=f"A{target_row}:F{target_row}", values=[final_row])
@@ -98,14 +91,9 @@ def save_to_sheet_live(search_key, data_list):
 st.sidebar.header("📅 期間選択")
 sel_year = st.sidebar.selectbox("西暦", list(MONTH_CONFIG.keys()))
 sel_month = st.sidebar.selectbox("月", list(MONTH_CONFIG[sel_year].keys()))
-
 week_row_map = {"W1": 57, "W2": 58, "W3": 59, "W4": 60, "W5": 61, "W6": 62}
 sel_week = st.sidebar.selectbox("週", list(week_row_map.keys()))
-
-# 検索用キーの作成
 current_key = f"{sel_year}-{sel_month}-{sel_week}"
-
-# ★ フォームの外で最新テキストを読み込む (重要)
 current_txt = fetch_sheet_text_live(current_key)
 
 with st.sidebar.form("input_form"):
@@ -115,7 +103,6 @@ with st.sidebar.form("input_form"):
     r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
     r_kyaku = st.text_area("客数の理由", value=current_txt["kyaku"])
     sum_text = st.text_area("■総評 / 今週のアクション", value=current_txt["summary"], height=150)
-    
     if st.form_submit_button("全ユーザーに共有保存"):
         if save_to_sheet_live(current_key, [r_zasu, r_tanka, r_cvr, r_kyaku, sum_text]):
             st.success("保存完了！")
@@ -129,7 +116,6 @@ df_raw = load_raw_data(current_gid)
 if not df_raw.empty:
     st.title(f"📊 ストアカルテ {sel_year}年{sel_month}")
     
-    # CSS
     st.markdown('''
     <style>
         html, body, [class*="css"] { font-family: "Meiryo", sans-serif; color: #3b484e; }
@@ -154,7 +140,7 @@ if not df_raw.empty:
         cls = "reach" if cond else "unmet"
         return f'<span class="{cls}">{val:.1f}%</span>'
 
-    # All Stores
+    # --- All Stores (項目を以前の状態に完全回復) ---
     act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     tgt, bgt, ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     mt, mb, ml = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
@@ -163,13 +149,16 @@ if not df_raw.empty:
     st.markdown(f'''
     <table class="base-table">
         <tr><th style="background-color:#606970;">月次受注額</th><td colspan="5" style="font-size:1.2em;font-weight:bold;">{act:,.0f}</td></tr>
-        <tr><th>月次目標</th><td>{tgt:,.0f}</td><th>月次予算</th><td>{bgt:,.0f}</td><th>前年受注</th><td>{ly:,.0f}</td></tr>
+        <tr><th>月次目標</th><td>{tgt:,.0f}</td><th>月次予算</th><td>{bgt:,.0f}</td><th>前年受注額</th><td>{ly:,.0f}</td></tr>
         <tr><th>目標比</th><td>{fmt_p(act/tgt*100 if tgt else 0, act>=tgt)}</td><th>予算比</th><td>{fmt_p(act/bgt*100 if bgt else 0, act>=bgt)}</td><th>前年比</th><td>{fmt_p(act/ly*100 if ly else 0, act>=ly)}</td></tr>
+        <tr><th>差額</th><td>{fmt_v(act-tgt, act>=tgt)}</td><th>差額</th><td>{fmt_v(act-bgt, act>=bgt)}</td><th>差額</th><td>{fmt_v(act-ly, act>=ly)}</td></tr>
+        <tr><th>MTD目標</th><td>{mt:,.0f}</td><th>MTD予算</th><td>{mb:,.0f}</td><th>MTD前年</th><td>{ml:,.0f}</td></tr>
         <tr><th>MTD目標%</th><td>{fmt_p(act/mt*100 if mt else 0, act>=mt)}</td><th>MTD予算%</th><td>{fmt_p(act/mb*100 if mb else 0, act>=mb)}</td><th>MTD前年%</th><td>{fmt_p(act/ml*100 if ml else 0, act>=ml)}</td></tr>
+        <tr><th>MTD目標 差額</th><td>{fmt_v(act-mt, act>=mt)}</td><th>MTD予算 差額</th><td>{fmt_v(act-mb, act>=mb)}</td><th>MTD前年 差額</th><td>{fmt_v(act-ml, act>=ml)}</td></tr>
     </table>
     ''', unsafe_allow_html=True)
 
-    # Weeklyサマリー
+    # --- Weeklyサマリー ---
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     w_rows = ""
     for w_n, r_i in week_row_map.items():
@@ -177,7 +166,7 @@ if not df_raw.empty:
         w_rows += f'<tr><td>{w_n}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_v(wa-wt, wa>=wt)}</td><td>{fmt_p(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_v(wa-wb, wa>=wb)}</td><td>{fmt_p(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_p(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
 
-    # KPI別
+    # --- KPI別 ---
     row_idx = week_row_map[sel_week]
     st.markdown(f"<h4>KPI別 ({sel_week})</h4>", unsafe_allow_html=True)
     k_data = [("座数", 44, 48, 52, "zasu"), ("客単価", 47, 51, 55, "tanka"), ("CVR", 45, 49, 53, "cvr"), ("客数", 46, 50, 54, "kyaku")]
@@ -187,12 +176,11 @@ if not df_raw.empty:
         u = "¥" if k_n == "客単価" else ""
         m = "◯" if (av/tv if tv else 0) >= 1 else "△" if (av/tv if tv else 0) >= 0.9 else "✕"
         t_s = f"{u}{tv:,.0f}" if tv >= 100 else f"{u}{tv:.2f}"
-        
         reason = str(current_txt[t_k]).replace("\n", "<br>")
         k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
-    # 総評
+    # --- 総評 ---
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
     st.markdown(f'<div class="summary-box">{str(current_txt["summary"])}</div>', unsafe_allow_html=True)
 else:
