@@ -10,9 +10,17 @@ import base64
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="ストアカルテ", layout="wide")
 
-# --- 【修正ポイント】ロゴ画像を直接埋め込み ---
-# ご提示いただいたロゴをBase64に変換したデータです
-LOGO_IMAGE_B64 = "iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAYAAAA8AXHiAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFm2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSfvu78nIGlkPSdXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQnPz4KPHg6eG1wbWV0YSB4bWxuczp4PSdhZG9iZTpuczptZXRhLycgeDp4bXB0az0nQWRvYmUgWE1QIENvcmUgNS4wLWMwNjAgNjEuMTM0Nzc3LCAyMDEwLzAyLzEyLTE3OjMyOjAwICAgICAgICAnPg><rdf:RDFIHhtbG5zOnJkZj0naHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyc+PHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9JycgeG1sbnM6eG1wTU09J2h0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8nIHhtbG5zOnN0UmVmPSdodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjJyB4bWxuczp4bXA9J2h0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8nIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0neG1wLmRpZDozRTQ4NDIxNzA5MjA2ODExODBDMEI4N0ZCM0JCOEIzQScgeG1wTU06RG9jdW1lbnRJRD0neG1wLmRpZDo4RjBCNDYyNDEyOTUxMUVBQUVERkRGMzhCRDhCRDhCRScgeG1wTU06SW5zdGFuY2VJRD0neG1wLmlpZDo4RjBCNDYyMzEyOTUxMUVBQUVERkRGMzhCRDhCRDhCRScgeG1wOkNyZWF0b3JUb29sPSdBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCc+PHhtcE1NOkRlcml2ZWRGcm9tIHN0UmVmOmluc3RhbmNlSUQ9J3htcC5paWQ6M0U0ODQyMTcwOTIwNjgxMTgwQzBCODdGQjNCQjhCM0AnIHN0UmVmOmRvY3VtZW50SUQ9J3htcC5kaWQ6M0U0ODQyMTcwOTIwNjgxMTgwQzBCODdGQjNCQjhCM0AnLz48L3JkZjpEZXNjcmlwdGlvbj48L3JkZjpSREY+PC94OnhtcG1ldGE+PD94cGFja2V0IGVuZD0ndyc/Piiw98sAAAMDSURBVHja7Z1daBRXFMfPSZpUq6b5atQ22tQU27QqWpS+qIiiiIKCIigqgoKCKIKCgiiCgIKCIoIKCiIKCooIKiiiIKCIooIiiiIKKqiooKIiooiKiopKmqbZZn5pI5O8yEzsZOfuzuYf4RfhbM7O7m//98y55+w5R7Ikk1mC7+8P6t8vK5K84t9fD+rfLyvI7/69/f5SIsH59b8+N3N7f+/f35v/46fF47//6m5v7z5v709vfP5503v783vbe6f663N/b3pvd+9O//x27+Hj29uO//3H9m4//vcfO7v9+D907f3pvZPrvR6L4O9vNofG4mY9I5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpY6X//qYtHivd728O//pveGAsYscixv1VqS5fH75/X/7/VayLnxv1q65u1C64vFDq551dqFmwtX5B5XbX5m6XpW7B5vnK7Z7N7bLM5vaM6T2D5XrfHpnP/Z4v7pnFfD/Tf/G374b+iV6M5Xof4rLWDnF5v3Krlv6pXr59C9f1Xp59C/X19O1bpI/v5Vu7UJ8C+/q6+Lox5YpYpoxyRcofN40RqzI55YoY5YqUPm56RqxG5pQrUu96WoxYNX4YvX56Mep44P9G66uXp9vV89Prun63fXn55Zfb1XPT47p+t315+eWXW64esY4fsY4esY4dsY4csY5Yw45YQ45Yw75ixBrysK4YrY44rMtGqyMON1pZOTvW7hFvUuNlaryYGi+mxgve6uHh1MvC4YmXhMNdLwuHO/4v/O64vXC64fb664bbqfGCt3J44S0dXuBWXqPGi8eU//1p6e8uXv8v4pXfI/w3AAAAAAD//wMAH4M1pU/uX4AAAAAof38/AAAAAMDx//8BAP//AAAAAAD//wMAj7xXvO//X/4="
+# --- ロゴ画像表示用関数（エラー回避・安定化） ---
+def get_logo_image(b64_str):
+    try:
+        # Base64をデコードしてバイトデータに変換
+        return base64.b64decode(b64_str)
+    except:
+        return None
+
+# ご提示いただいたロゴデータのBase64
+# ※データが非常に長いため、コードの貼り付けミスにご注意ください
+LOGO_DATA = "iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAYAAAA8AXHiAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFm2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSfvu78nIGlkPSdXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQnPz4KPHg6eG1wbWV0YSB4bWxuczp4PSdhZG9iZTpuczptZXRhLycgeDp4bXB0az0nQWRvYmUgWE1QIENvcmUgNS4wLWMwNjAgNjEuMTM0Nzc3LCAyMDEwLzAyLzEyLTE3OjMyOjAwICAgICAgICAnPg><rdf:RDFIHhtbG5zOnJkZj0naHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyc+PHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9JycgeG1sbnM6eG1wTU09J2h0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8nIHhtbG5zOnN0UmVmPSdodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjJyB4bWxuczp4bXA9J2h0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8nIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0neG1wLmRpZDozRTQ4NDIxNzA5MjA2ODExODBDMEI4N0ZCM0JCOEIzQScgeG1wTU06RG9jdW1lbnRJRD0neG1wLmRpZDo4RjBCNDYyNDEyOTUxMUVBQUVERkRGMzhCRDhCRDhCRScgeG1wTU06SW5zdGFuY2VJRD0neG1wLmlpZDo4RjBCNDYyMzEyOTUxMUVBQUVERkRGMzhCRDhCRDhCRScgeG1wOkNyZWF0b3JUb29sPSdBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCc+PHhtcE1NOkRlcml2ZWRGcm9tIHN0UmVmOmluc3RhbmNlSUQ9J3htcC5paWQ6M0U0ODQyMTcwOTIwNjgxMTgwQzBCODdGQjNCQjhCM0AnIHN0UmVmOmRvY3VtZW50SUQ9J3htcC5kaWQ6M0U0ODQyMTcwOTIwNjgxMTgwQzBCODdGQjNCQjhCM0AnLz48L3JkZjpEZXNjcmlwdGlvbj48L3JkZjpSREY+PC94OnhtcG1ldGE+PD94cGFja2V0IGVuZD0ndyc/Piiw98sAAAMDSURBVHja7Z1daBRXFMfPSZpUq6b5atQ22tQU27QqWpS+qIiiiIKCIigqgoKCKIKCgiiCgIKCIoIKCiIKCooIKiiiIKCIooIiiiIKKqiooKIiooiKiopKmqbZZn5pI5O8yEzsZOfuzuYf4RfhbM7O7m//98y55+w5R7Ikk1mC7+8P6t8vK5K84t9fD+rfLyvI7/69/f5SIsH59b8+N3N7f+/f35v/46fF47//6m5v7z5v709vfP5503v783vbe6f663N/b3pvd+9O//x27+Hj29uO//3H9m4//vcfO7v9+D907f3pvZPrvR6L4O9vNofG4mY9I5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpY6X//qYtHivd728O//pveGAsYscixv1VqS5fH75/X/7/VayLnxv1q65u1C64vFDq551dqFmwtX5B5XbX5m6XpW7B5vnK7Z7N7bLM5vaM6T2D5XrfHpnP/Z4v7pnFfD/Tf/G374b+iV6M5Xof4rLWDnF5v3Krlv6pXr59C9f1Xp59C/X19O1bpI/v5Vu7UJ8C+/q6+Lox5YpYpoxyRcofN40RqzI55YoY5YqUPm56RqxG5pQrUu96WoxYNX4YvX56Mep44P9G66uXp9vV89Prun63fXn55Zfb1XPT47p+t315+eWXW64esY4fsY4esY4dsY4csY5Yw45YQ45Yw75ixBrysK4YrY44rMtGqyMON1pZOTvW7hFvUuNlaryYGi+mxgve6uHh1MvC4YmXhMNdLwuHO/4v/O64vXC64fb664bbqfGCt3J44S0dXuBWXqPGi8eU//1p6e8uXv8v4pXfI/w3AAAAAAD//wMAH4M1pU/uX4AAAAAof38/AAAAAMDx//8BAP//AAAAAAD//wMAj7xXvO//X/4="
 
 # --- 2. Googleスプレッドシート接続設定 ---
 @st.cache_resource
@@ -41,7 +49,7 @@ MONTH_CONFIG = {
 
 STORE_GROUPS = {
     "イオンモール": ["mozoワンダーシティ","THE OUTLETS HIROSHIMA","イオンモールKYOTO","イオンモール旭川西","イオンモール綾川","イオンモール伊丹昆陽","イオンモール羽生","イオンモール岡崎","イオンモール岡山","イオンモール各務原インター","イオンモール橿原","イオンモール宮崎","イオンモール京都桂川","イオンモール熊本","イオンモール広島府中","イオンモール高崎","イオンモール札幌発寒","イオンモール鹿児島","イオンモール春日部","イオンモール新潟亀田インター","イオンモール須坂","イオンモール水戸内原","イオンモール川口","イオンモール倉敷","イオンモール草津","イオンモール大高","イオンモール筑紫野","イオンモール長久手","イオンモール天童","イオンモール徳島","イオンモール苫小牧","イオンモール白山","イオンモール八幡東","イオンモール姫路大津","イオンモール浜松市野","イオンモール浜松志都呂","イオンモール福岡","イオンモール豊川","イオンモール幕張新都心","イオンモール名古屋茶屋","イオンモール名取","イオンモール鈴鹿","イオンモール和歌山","イオンレイクタウンmori"],
-    "ららぽーと": ["ららぽーとEXPOCITY","ららぽーとTOKYO-BAY","ららぽーと愛知東郷","ららぽーと横浜","ららぽーと海老名","ららぽーと堺","らららぽーと沼津","ららぽーと湘南平塚","ららぽーと新三郷","ららぽーと富士見","ららぽーと福岡","ららぽーと名古屋みなとアクルス","ららぽーと門真","ららぽーと立川立飛","ららぽーと和泉"],
+    "ららぽーと": ["ららぽーとEXPOCITY","ららぽーとTOKYO-BAY","ららぽーと愛知東郷","ららぽーと横浜","ららぽーと海老名","ららぽーと堺","ららぽーと沼津","ららぽーと湘南平塚","ららぽーと新三郷","ららぽーと富士見","ららぽーと福岡","ららぽーと名古屋みなとアクルス","ららぽーと門真","ららぽーと立川立飛","ららぽーと和泉"],
     "ショッピングモール": ["アクアシティお台場","あべのキューズモール","アリオ橋本","イーアスつくば","インターパークスタジアム","エミテラス所沢","エミフルMASAKI","おのだサンパーク","オリナス錦糸町","キャナルシティ博多","くずはモール","コクーンシティ","スマーク伊勢崎","セブンパークアリオ柏","トレッサ横浜","ならファミリー","なんばパークス","モラージュ菖浦","モレラ岐阜","ラソラ札幌","ララガーデン長町","浦添 PARCO CITY","新宿マルイ アネックス","神戸ハーバーランドumie","西宮ガーデンズ","大同生命札幌ビル miredo","二子玉川ライズ","有明ガーデン"],
     "アウトレット": ["りんくうプレミアム・アウトレット","三井アウトレットパーク岡崎","酒々井プレミアム・アウトレット","木更津"],
     "駅ビル": ["キラリナ京王吉祥寺","ルクア大阪","池袋サンシャインシティ"],
@@ -142,13 +150,16 @@ current_gid = MONTH_CONFIG[sel_year][sel_month]["gid"]
 df_raw = load_raw_data_auth(current_gid)
 
 if not df_raw.empty:
-    # --- ヘッダー部分：画像データを直接埋め込む ---
-    st.markdown(f'''
-    <div style="display: flex; align-items: center; margin-bottom: 20px;">
-        <img src="data:image/jpeg;base64,{LOGO_IMAGE_B64}" style="width: 50px; height: 50px; margin-right: 15px; border-radius: 5px; object-fit: contain;">
-        <h1 style="margin: 0; color: #3b484e; font-family: 'Meiryo', sans-serif;">ストアカルテ {sel_year}年{sel_month}</h1>
-    </div>
-    ''', unsafe_allow_html=True)
+    # --- ヘッダー：st.columnsを使用して画像とタイトルを並べる（最も安定する方法） ---
+    col_logo, col_title = st.columns([1, 15])
+    
+    with col_logo:
+        img_bytes = get_logo_image(LOGO_DATA)
+        if img_bytes:
+            st.image(img_bytes, width=55)
+    
+    with col_title:
+        st.markdown(f'<h1 style="margin-top: -5px; color: #3b484e; font-family: \'Meiryo\', sans-serif;">ストアカルテ {sel_year}年{sel_month}</h1>', unsafe_allow_html=True)
     
     st.markdown('''
     <style>
@@ -214,7 +225,7 @@ if not df_raw.empty:
         k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
-    # --- モール別MTD ---
+    # --- モール別MTD (期間同期版) ---
     st.markdown(f"<h4>モール別MTD ({sel_week})</h4>", unsafe_allow_html=True)
     store_names_row = df_raw.iloc[9].fillna("").astype(str).str.strip()
     
