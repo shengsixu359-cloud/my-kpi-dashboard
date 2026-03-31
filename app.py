@@ -3,29 +3,30 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+import io
+import requests
 
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="ストアカルテ", layout="wide")
 
 # --- 2. Googleスプレッドシート接続設定 ---
 @st.cache_resource
-def get_gspread_client():
+def get_gspread_auth():
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds_dict = st.secrets["gcp_service_account"]
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        return gspread.authorize(creds)
+        return creds
     except Exception as e:
         st.error(f"認証エラー: {e}")
         return None
 
-gc = get_gspread_client()
+auth_creds = get_gspread_auth()
+gc = gspread.authorize(auth_creds)
 SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
 
 # --- 3. 引用元データ設定 ---
-# URL末尾のパラメータを除去し、純粋なエクスポート用URLを構成
-BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
-
+SPREADSHEET_ID = "1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8"
 MONTH_CONFIG = {
     "2026": {
         "3月": {"gid": "1502960872"},
@@ -33,11 +34,11 @@ MONTH_CONFIG = {
     }
 }
 
-# 業態・ストア対応リスト
+# 業態・ストア対応リスト (変更なし)
 STORE_GROUPS = {
     "イオンモール": ["mozoワンダーシティ","THE OUTLETS HIROSHIMA","イオンモールKYOTO","イオンモール旭川西","イオンモール綾川","イオンモール伊丹昆陽","イオンモール羽生","イオンモール岡崎","イオンモール岡山","イオンモール各務原インター","イオンモール橿原","イオンモール宮崎","イオンモール京都桂川","イオンモール熊本","イオンモール広島府中","イオンモール高崎","イオンモール札幌発寒","イオンモール鹿児島","イオンモール春日部","イオンモール新潟亀田インター","イオンモール須坂","イオンモール水戸内原","イオンモール川口","イオンモール倉敷","イオンモール草津","イオンモール大高","イオンモール筑紫野","イオンモール長久手","イオンモール天童","イオンモール徳島","イオンモール苫小牧","イオンモール白山","イオンモール八幡東","イオンモール姫路大津","イオンモール浜松市野","イオンモール浜松志都呂","イオンモール福岡","イオンモール豊川","イオンモール幕張新都心","イオンモール名古屋茶屋","イオンモール名取","イオンモール鈴鹿","イオンモール和歌山","イオンレイクタウンmori"],
     "ららぽーと": ["ららぽーとEXPOCITY","ららぽーとTOKYO-BAY","ららぽーと愛知東郷","ららぽーと横浜","ららぽーと海老名","ららぽーと堺","ららぽーと沼津","ららぽーと湘南平塚","ららぽーと新三郷","ららぽーと富士見","ららぽーと福岡","ららぽーと名古屋みなとアクルス","ららぽーと門真","ららぽーと立川立飛","ららぽーと和泉"],
-    "ショッピングモール": ["アクアシティお台場","あべのキューズモール","アリオ橋本","イーアスつくば","インターパークスタジアム","エミテラス所沢","エミフルMASAKI","おのだサンパーク","オリナス錦糸町","キャナルシティ博多","くずはモール","コクーンシティ","スマーク伊勢崎","セブンパークアリオ柏","トレッサ横浜","ならファミリー","なんばパークス","モラージュ菖蒲","モレラ岐阜","ラソラ札幌","ララガーデン長町","浦添 PARCO CITY","新宿マルイ アネックス","神戸ハーバーランドumie","西宮ガーデンズ","大同生命札幌ビル miredo","二子玉川ライズ","有明ガーデン"],
+    "ショッピングモール": ["アクアシティお台場","あべのキューズモール","アリオ橋本","イーアスつくば","インターパークスタジアム","エミテラス所沢","エミフルMASAKI","おのだサンパーク","オリナス錦糸町","キャナルシティ博多","くずはモール","コクーンシティ","スマーク伊勢崎","セブンパークアリオ柏","トレッサ横浜","ならファミリー","なんばパークス","モラージュ菖浦","モレラ岐阜","ラソラ札幌","ララガーデン長町","浦添 PARCO CITY","新宿マルイ アネックス","神戸ハーバーランドumie","西宮ガーデンズ","大同生命札幌ビル miredo","二子玉川ライズ","有明ガーデン"],
     "アウトレット": ["りんくうプレミアム・アウトレット","三井アウトレットパーク岡崎","酒々井プレミアム・アウトレット","木更津"],
     "駅ビル": ["キラリナ京王吉祥寺","ルクア大阪","池袋サンシャインシティ"],
     "路面店": ["御堂筋本町","渋谷宮下公園前","八千代","名古屋栄"],
@@ -46,14 +47,27 @@ STORE_GROUPS = {
 }
 
 @st.cache_data(ttl=5)
-def load_raw_data(gid):
+def load_raw_data_auth(gid):
+    """【修正版】サービスアカウントの権限を使ってCSVを取得する"""
     try:
-        url = f"{BASE_URL}{gid}"
-        df = pd.read_csv(url, header=None)
-        return df
+        # サービスアカウントのアクセストークンを取得
+        import google.auth.transport.requests
+        request = google.auth.transport.requests.Request()
+        auth_creds.refresh(request)
+        token = auth_creds.token
+        
+        # 認証ヘッダーを付けてリクエスト
+        export_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={gid}"
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(export_url, headers=headers)
+        
+        if response.status_code == 200:
+            return pd.read_csv(io.BytesIO(response.content), header=None)
+        else:
+            st.sidebar.error(f"HTTP Error {response.status_code}: 認証に失敗しました。")
+            return pd.DataFrame()
     except Exception as e:
-        # 読み込めない場合に詳細なエラーをサイドバーに表示
-        st.sidebar.error(f"⚠️ 読み込みエラー詳細: {e}")
+        st.sidebar.error(f"データ読込エラー: {e}")
         return pd.DataFrame()
 
 def get_score(df, row, col):
@@ -81,7 +95,6 @@ def fetch_sheet_text_live(search_key):
                 return res
         return res
     except Exception as e:
-        st.sidebar.error(f"読込失敗: {e}")
         return {"zasu": "", "tanka": "", "cvr": "", "kyaku": "", "summary": ""}
 
 def save_to_sheet_live(search_key, data_list):
@@ -102,7 +115,6 @@ def save_to_sheet_live(search_key, data_list):
             ws.append_row(final_row)
         return True
     except Exception as e:
-        st.error(f"保存失敗: {e}")
         return False
 
 # --- 5. サイドバー UI ---
@@ -118,7 +130,7 @@ with st.sidebar.form("input_form"):
     st.info(f"📍 読込中キー: {current_key}")
     r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
     r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
-    r_cvr = st.text_area("CVR의理由", value=current_txt["cvr"])
+    r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
     r_kyaku = st.text_area("客数の理由", value=current_txt["kyaku"])
     sum_text = st.text_area("■総評 / 今週のアクション", value=current_txt["summary"], height=150)
     if st.form_submit_button("全ユーザーに共有保存"):
@@ -129,7 +141,7 @@ with st.sidebar.form("input_form"):
 
 # --- 6. メイン表示 ---
 current_gid = MONTH_CONFIG[sel_year][sel_month]["gid"]
-df_raw = load_raw_data(current_gid)
+df_raw = load_raw_data_auth(current_gid)
 
 if not df_raw.empty:
     st.title(f"📊 ストアカルテ {sel_year}年{sel_month}")
@@ -158,7 +170,7 @@ if not df_raw.empty:
         cls = "reach" if cond else "unmet"
         return f'<span class="{cls}">{val:.1f}%</span>'
 
-    # --- All Stores ---
+    # All Stores
     act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     tgt, bgt, ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     mt, mb, ml = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
@@ -176,7 +188,7 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- Weeklyサマリー ---
+    # Weeklyサマリー
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     w_rows = ""
     for w_n, r_i in week_row_map.items():
@@ -184,7 +196,7 @@ if not df_raw.empty:
         w_rows += f'<tr><td>{w_n}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_v(wa-wt, wa>=wt)}</td><td>{fmt_p(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_v(wa-wb, wa>=wb)}</td><td>{fmt_p(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_p(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
 
-    # --- KPI別 ---
+    # KPI別
     row_idx = week_row_map[sel_week]
     st.markdown(f"<h4>KPI別 ({sel_week})</h4>", unsafe_allow_html=True)
     k_data = [("座数", 44, 48, 52, "zasu"), ("客単価", 47, 51, 55, "tanka"), ("CVR", 45, 49, 53, "cvr"), ("客数", 46, 50, 54, "kyaku")]
@@ -198,7 +210,7 @@ if not df_raw.empty:
         k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
-    # --- モール別MTD ---
+    # モール別MTD
     st.markdown("<h4>モール別MTD</h4>", unsafe_allow_html=True)
     store_names_row = df_raw.iloc[9]
     mall_report_rows = ""
@@ -228,4 +240,4 @@ if not df_raw.empty:
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
     st.markdown(f'<div class="summary-box">{str(current_txt["summary"])}</div>', unsafe_allow_html=True)
 else:
-    st.warning("数値データを読み込めませんでした。サイドバーのエラー詳細を確認してください。")
+    st.warning("数値データを読み込めませんでした。")
