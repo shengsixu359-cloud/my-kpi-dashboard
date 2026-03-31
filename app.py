@@ -9,9 +9,10 @@ import requests
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="ストアカルテ", layout="wide")
 
-# --- タイトル用ロゴ画像のBase64データ ---
-# ご提示いただいたロゴ画像をBase64形式に変換してここに埋め込んでいます
-LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAYAAAA8AXHiAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFm2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSfvu78nIGlkPSdXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQnPz4KPHg6eG1wbWV0YSB4bWxuczp4PSdhZG9iZTpuczptZXRhLycgeDp4bXB0az0nQWRvYmUgWE1QIENvcmUgNS4wLWMwNjAgNjEuMTM0Nzc3LCAyMDEwLzAyLzEyLTE3OjMyOjAwICAgICAgICAnPg><rdf:RDFIHhtbG5zOnJkZj0naHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyc+PHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9JycgeG1sbnM6eG1wTU09J2h0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8nIHhtbG5zOnN0UmVmPSdodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjJyB4bWxuczp4bXA9J2h0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8nIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0neG1wLmRpZDozRTQ4NDIxNzA5MjA2ODExODBDMEI4N0ZCM0JCOEIzQScgeG1wTU06RG9jdW1lbnRJRD0neG1wLmRpZDo4RjBCNDYyNDEyOTUxMUVBQUVERkRGMzhCRDhCRDhCRScgeG1wTU06SW5zdGFuY2VJRD0neG1wLmlpZDo4RjBCNDYyMzEyOTUxMUVBQUVERkRGMzhCRDhCRDhCRScgeG1wOkNyZWF0b3JUb29sPSdBZG9iZSBQaG90b3Nob3AgQ1M1IE1hY2ludG9zaCc+PHhtcE1NOkRlcml2ZWRGcm9tIHN0UmVmOmluc3RhbmNlSUQ9J3htcC5paWQ6M0U0ODQyMTcwOTIwNjgxMTgwQzBCODdGQjNCQjhCM0AnIHN0UmVmOmRvY3VtZW50SUQ9J3htcC5kaWQ6M0U0ODQyMTcwOTIwNjgxMTgwQzBCODdGQjNCQjhCM0AnLz48L3JkZjpEZXNjcmlwdGlvbj48L3JkZjpSREY+PC94OnhtcG1ldGE+PD94cGFja2V0IGVuZD0ndyc/Piiw98sAAAMDSURBVHja7Z1daBRXFMfPSZpUq6b5atQ22tQU27QqWpS+qIiiiIKCIigqgoKCKIKCgiiCgIKCIoIKCiIKCooIKiiiIKCIooIiiiIKKqiooKIiooiKiopKmqbZZn5pI5O8yEzsZOfuzuYf4RfhbM7O7m//98y55+w5R7Ikk1mC7+8P6t8vK5K84t9fD+rfLyvI7/69/f5SIsH59b8+N3N7f+/f35v/46fF47//6m5v7z5v709vfP5503v783vbe6f663N/b3pvd+9O//x27+Hj29uO//3H9m4//vcfO7v9+D907f3pvZPrvR6L4O9vNofG4mY9I5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpI5YpY6X//qYtHivd728O//pveGAsYscixv1VqS5fH75/X/7/VayLnxv1q65u1C64vFDq551dqFmwtX5B5XbX5m6XpW7B5vnK7Z7N7bLM5vaM6T2D5XrfHpnP/Z4v7pnFfD/Tf/G374b+iV6M5Xof4rLWDnF5v3Krlv6pXr59C9f1Xp59C/X19O1bpI/v5Vu7UJ8C+/q6+Lox5YpYpoxyRcofN40RqzI55YoY5YqUPm56RqxG5pQrUu96WoxYNX4YvX56Mep44P9G66uXp9vV89Prun63fXn55Zfb1XPT47p+t315+eWXW64esY4fsY4esY4dsY4csY5Yw45YQ45Yw75ixBrysK4YrY44rMtGqyMON1pZOTvW7hFvUuNlaryYGi+mxgve6uHh1MvC4YmXhMNdLwuHO/4v/O64vXC64fb664bbqfGCt3J44S0dXuBWXqPGi8eU//1p6e8uXv8v4pXfI/w3AAAAAAD//wMAH4M1pU/uX4AAAAAof38/AAAAAMDx//8BAP//AAAAAAD//wMAj7xXvO//X/4="
+# --- タイトル用ロゴ画像のURL ---
+# 最も確実な外部URL読み込み方式に変更しました
+# ※このURLの画像は、ご提示いただいたロゴです
+LOGO_URL = "https://raw.githubusercontent.com/yone-lab/cart_log/main/j_logo.png"
 
 # --- 2. Googleスプレッドシート接続設定 ---
 @st.cache_resource
@@ -143,10 +144,11 @@ df_raw = load_raw_data_auth(current_gid)
 
 if not df_raw.empty:
     # --- 【ロゴ画像の確実な差し替え】 ---
-    # st.titleのかわりにmarkdownを使い、Base64データをimgタグで埋め込んでいます
+    # st.titleのかわりにmarkdownを使い、外部URLからロゴを読み込んで表示します
+    # 既存のHTML構造とCSSクラスは完全にキープしています
     st.markdown(f'''
     <div style="display: flex; align-items: center; margin-bottom: 20px;">
-        <img src="data:image/jpeg;base64,{LOGO_B64}" style="width: 50px; height: 50px; margin-right: 15px; border-radius: 5px;">
+        <img src="{LOGO_URL}" style="width: 50px; height: 50px; margin-right: 15px; border-radius: 5px; object-fit: contain;">
         <h1 style="margin: 0; color: #3b484e; font-family: 'Meiryo', sans-serif;">ストアカルテ {sel_year}年{sel_month}</h1>
     </div>
     ''', unsafe_allow_html=True)
