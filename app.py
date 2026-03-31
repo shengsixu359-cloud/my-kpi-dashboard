@@ -31,6 +31,18 @@ MONTH_CONFIG = {
     }
 }
 
+# 業態・ストア対応リスト
+STORE_GROUPS = {
+    "イオンモール": ["mozoワンダーシティ","THE OUTLETS HIROSHIMA","イオンモールKYOTO","イオンモール旭川西","イオンモール綾川","イオンモール伊丹昆陽","イオンモール羽生","イオンモール岡崎","イオンモール岡山","イオンモール各務原インター","イオンモール橿原","イオンモール宮崎","イオンモール京都桂川","イオンモール熊本","イオンモール広島府中","イオンモール高崎","イオンモール札幌発寒","イオンモール鹿児島","イオンモール春日部","イオンモール新潟亀田インター","イオンモール須坂","イオンモール水戸内原","イオンモール川口","イオンモール倉敷","イオンモール草津","イオンモール大高","イオンモール筑紫野","イオンモール長久手","イオンモール天童","イオンモール徳島","イオンモール苫小牧","イオンモール白山","イオンモール八幡東","イオンモール姫路大津","イオンモール浜松市野","イオンモール浜松志都呂","イオンモール福岡","イオンモール豊川","イオンモール幕張新都心","イオンモール名古屋茶屋","イオンモール名取","イオンモール鈴鹿","イオンモール和歌山","イオンレイクタウンmori"],
+    "ららぽーと": ["ららぽーとEXPOCITY","ららぽーとTOKYO-BAY","ららぽーと愛知東郷","ららぽーと横浜","ららぽーと海老名","ららぽーと堺","ららぽーと沼津","ららぽーと湘南平塚","ららぽーと新三郷","ららぽーと富士見","ららぽーと福岡","ららぽーと名古屋みなとアクルス","ららぽーと門真","ららぽーと立川立飛","ららぽーと和泉"],
+    "ショッピングモール": ["アクアシティお台場","あべのキューズモール","アリオ橋本","イーアスつくば","インターパークスタジアム","エミテラス所沢","エミフルMASAKI","おのだサンパーク","オリナス錦糸町","キャナルシティ博多","くずはモール","コクーンシティ","スマーク伊勢崎","セブンパークアリオ柏","トレッサ横浜","ならファミリー","なんばパークス","モラージュ菖蒲","モレラ岐阜","ラソラ札幌","ララガーデン長町","浦添 PARCO CITY","新宿マルイ アネックス","神戸ハーバーランドumie","西宮ガーデンズ","大同生命札幌ビル miredo","二子玉川ライズ","有明ガーデン"],
+    "アウトレット": ["りんくうプレミアム・アウトレット","三井アウトレットパーク岡崎","酒々井プレミアム・アウトレット","木更津"],
+    "駅ビル": ["キラリナ京王吉祥寺","ルクア大阪","池袋サンシャインシティ"],
+    "路面店": ["御堂筋本町","渋谷宮下公園前","八千代","名古屋栄"],
+    "MARK IS": ["MARK IS みなとみらい","MARK IS 静岡","MARK IS 福岡ももち"],
+    "アミュプラザ": ["アミュプラザおおいた","アミュプラザくまもと","アミュプラザ長崎"]
+}
+
 @st.cache_data(ttl=5)
 def load_raw_data(gid):
     try:
@@ -140,7 +152,7 @@ if not df_raw.empty:
         cls = "reach" if cond else "unmet"
         return f'<span class="{cls}">{val:.1f}%</span>'
 
-    # --- All Stores (項目を以前の状態に完全回復) ---
+    # --- All Stores ---
     act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     tgt, bgt, ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     mt, mb, ml = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
@@ -179,6 +191,64 @@ if not df_raw.empty:
         reason = str(current_txt[t_k]).replace("\n", "<br>")
         k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
+
+    # --- モール別MTD (新規追加セクション) ---
+    st.markdown("<h4>モール別MTD</h4>", unsafe_allow_html=True)
+    
+    # 店舗名(10行目)と週(A列)のインデックス取得
+    store_names_row = df_raw.iloc[9] # 10行目
+    
+    mall_report_rows = ""
+    total_juchu_all_stores = 0
+    mall_data_list = []
+
+    # 各グループの計算
+    for group_name, stores in STORE_GROUPS.items():
+        group_juchu = 0
+        store_count = 0
+        for store in stores:
+            # 店舗名に一致する列を探す
+            matching_cols = [idx for idx, name in enumerate(store_names_row) if str(name).strip() == store]
+            if matching_cols:
+                col_idx = matching_cols[0]
+                store_count += 1
+                # KW19～KW25 (行19～25) の合計
+                group_juchu += sum([get_score(df_raw, r, col_idx + 1) for r in range(19, 26)])
+        
+        mall_data_list.append({"name": group_name, "count": store_count, "juchu": group_juchu})
+        total_juchu_all_stores += group_juchu
+
+    # 「全体」の行を追加
+    mall_report_rows += f'''
+    <tr style="background-color:#f0f2f6; font-weight:bold;">
+        <td>全体</td>
+        <td>{sum([d['count'] for d in mall_data_list])}</td>
+        <td>{total_juchu_all_stores:,.0f}</td>
+        <td>100.0%</td>
+    </tr>'''
+
+    # 各業態の行を追加
+    for d in mall_data_list:
+        share = (d['juchu'] / total_juchu_all_stores * 100) if total_juchu_all_stores else 0
+        mall_report_rows += f'''
+        <tr>
+            <td>{d['name']}</td>
+            <td>{d['count']}</td>
+            <td>{d['juchu']:,.0f}</td>
+            <td>{share:.1f}%</td>
+        </tr>'''
+
+    st.markdown(f'''
+    <table class="base-table">
+        <tr>
+            <th>業態</th>
+            <th>ストア数</th>
+            <th>受注実績</th>
+            <th>売上シェア</th>
+        </tr>
+        {mall_report_rows}
+    </table>
+    ''', unsafe_allow_html=True)
 
     # --- 総評 ---
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
