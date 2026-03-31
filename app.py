@@ -9,8 +9,16 @@ import requests
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="ストアカルテ", layout="wide")
 
-# --- 【修正】ロゴ画像をURLから取得する方式に変更 ---
-# 外部URLから読み込むことで、コードが長くなるのを防ぎ、エラーを回避します
+# --- 【修正】ロゴ画像を安全に読み込む関数 ---
+def load_image_from_url(url):
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.content
+        return None
+    except:
+        return None
+
 LOGO_URL = "https://raw.githubusercontent.com/yone-lab/cart_log/main/j_logo.png"
 
 # --- 2. Googleスプレッドシート接続設定 ---
@@ -141,11 +149,12 @@ current_gid = MONTH_CONFIG[sel_year][sel_month]["gid"]
 df_raw = load_raw_data_auth(current_gid)
 
 if not df_raw.empty:
-    # --- ヘッダー：ロゴ画像とタイトル ---
+    # --- ヘッダー：修正された画像表示ロジック ---
     col_logo, col_title = st.columns([1, 15])
     with col_logo:
-        # URLから直接画像を表示（最も安定する方式）
-        st.image(LOGO_URL, width=55)
+        img_content = load_image_from_url(LOGO_URL)
+        if img_content:
+            st.image(img_content, width=55)
     with col_title:
         st.markdown(f'<h1 style="margin-top: -5px; color: #3b484e; font-family: \'Meiryo\', sans-serif;">ストアカルテ {sel_year}年{sel_month}</h1>', unsafe_allow_html=True)
     
@@ -173,7 +182,7 @@ if not df_raw.empty:
         cls = "reach" if cond else "unmet"
         return f'<span class="{cls}">{val:.1f}%</span>'
 
-    # --- All Stores ---
+    # All Stores
     act = sum([get_score(df_raw, i, 6) for i in range(12, 54)])
     tgt, bgt, ly = get_score(df_raw, 3, 7), get_score(df_raw, 3, 9), get_score(df_raw, 3, 11)
     mt, mb, ml = get_score(df_raw, 6, 7), get_score(df_raw, 6, 9), get_score(df_raw, 6, 11)
@@ -191,7 +200,7 @@ if not df_raw.empty:
     </table>
     ''', unsafe_allow_html=True)
 
-    # --- Weeklyサマリー ---
+    # Weeklyサマリー
     st.markdown("<h4>WEEKサマリー</h4>", unsafe_allow_html=True)
     w_rows = ""
     for w_n, r_i in week_row_map.items():
@@ -199,7 +208,7 @@ if not df_raw.empty:
         w_rows += f'<tr><td>{w_n}</td><td>{wa:,.0f}</td><td>{wt:,.0f}</td><td>{fmt_v(wa-wt, wa>=wt)}</td><td>{fmt_p(wa/wt*100 if wt else 0, wa>=wt)}</td><td>{wb:,.0f}</td><td>{fmt_v(wa-wb, wa>=wb)}</td><td>{fmt_p(wa/wb*100 if wb else 0, wa>=wb)}</td><td>{wl:,.0f}</td><td>{fmt_p(wa/wl*100 if wl else 0, wa>=wl)}</td></tr>'
     st.markdown(f'<table class="base-table"><tr><th>WEEK</th><th>受注額</th><th>目標</th><th>差額</th><th>達成率</th><th>予算</th><th>差額</th><th>達成率</th><th>前年実績</th><th>前年比</th></tr>{w_rows}</table>', unsafe_allow_html=True)
 
-    # --- KPI別 ---
+    # KPI別
     current_week_row_idx = week_row_map[sel_week]
     st.markdown(f"<h4>KPI別 ({sel_week})</h4>", unsafe_allow_html=True)
     k_data = [("座数", 44, 48, 52, "zasu"), ("客単価", 47, 51, 55, "tanka"), ("CVR", 45, 49, 53, "cvr"), ("客数", 46, 50, 54, "kyaku")]
@@ -213,7 +222,7 @@ if not df_raw.empty:
         k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
-    # --- モール別MTD ---
+    # モール別MTD
     st.markdown(f"<h4>モール別MTD ({sel_week})</h4>", unsafe_allow_html=True)
     store_names_row = df_raw.iloc[9].fillna("").astype(str).str.strip()
     start_r = week_juchu_start_map[sel_week]
@@ -240,7 +249,7 @@ if not df_raw.empty:
         mall_report_rows += f'<tr><td>{d["name"]}</td><td>{d["count"]}</td><td>{d["juchu"]:,.0f}</td><td>{share:.1f}%</td></tr>'
     st.markdown(f'<table class="base-table"><tr><th>業態</th><th>ストア数</th><th>受注実績</th><th>売上シェア</th></tr>{mall_report_rows}</table>', unsafe_allow_html=True)
 
-    # --- 総評 ---
+    # 総評
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
     st.markdown(f'<div class="summary-box">{str(current_txt["summary"])}</div>', unsafe_allow_html=True)
 else:
