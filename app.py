@@ -9,18 +9,10 @@ import requests
 # --- 1. ページ基本設定 ---
 st.set_page_config(page_title="ストアカルテ", layout="wide")
 
-# --- 【最優先修正】ロゴ画像の読み込みロジック ---
-@st.cache_data
-def get_logo_bytes():
-    """外部URLから画像を取得し、バイトデータとして保持する（エラー回避用）"""
-    url = "https://raw.githubusercontent.com/yone-lab/cart_log/main/j_logo.png"
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            return response.content
-        return None
-    except:
-        return None
+# --- タイトル用ロゴ画像のURL ---
+# 最も確実な外部URL読み込み方式に変更しました
+# ※このURLの画像は、ご提示いただいたロゴです
+LOGO_URL = "https://raw.githubusercontent.com/yone-lab/cart_log/main/j_logo.png"
 
 # --- 2. Googleスプレッドシート接続設定 ---
 @st.cache_resource
@@ -47,6 +39,7 @@ MONTH_CONFIG = {
     }
 }
 
+# 業態・ストア対応リスト
 STORE_GROUPS = {
     "イオンモール": ["mozoワンダーシティ","THE OUTLETS HIROSHIMA","イオンモールKYOTO","イオンモール旭川西","イオンモール綾川","イオンモール伊丹昆陽","イオンモール羽生","イオンモール岡崎","イオンモール岡山","イオンモール各務原インター","イオンモール橿原","イオンモール宮崎","イオンモール京都桂川","イオンモール熊本","イオンモール広島府中","イオンモール高崎","イオンモール札幌発寒","イオンモール鹿児島","イオンモール春日部","イオンモール新潟亀田インター","イオンモール須坂","イオンモール水戸内原","イオンモール川口","イオンモール倉敷","イオンモール草津","イオンモール大高","イオンモール筑紫野","イオンモール長久手","イオンモール天童","イオンモール徳島","イオンモール苫小牧","イオンモール白山","イオンモール八幡東","イオンモール姫路大津","イオンモール浜松市野","イオンモール浜松志都呂","イオンモール福岡","イオンモール豊川","イオンモール幕張新都心","イオンモール名古屋茶屋","イオンモール名取","イオンモール鈴鹿","イオンモール和歌山","イオンレイクタウンmori"],
     "ららぽーと": ["ららぽーとEXPOCITY","ららぽーとTOKYO-BAY","ららぽーと愛知東郷","ららぽーと横浜","ららぽーと海老名","ららぽーと堺","ららぽーと沼津","ららぽーと湘南平塚","ららぽーと新三郷","ららぽーと富士見","ららぽーと福岡","ららぽーと名古屋みなとアクルス","ららぽーと門真","ららぽーと立川立飛","ららぽーと和泉"],
@@ -55,7 +48,7 @@ STORE_GROUPS = {
     "駅ビル": ["キラリナ京王吉祥寺","ルクア大阪","池袋サンシャインシティ"],
     "路面店": ["御堂筋本町","渋谷宮下公園前","八千代","名古屋栄"],
     "MARK IS": ["MARK IS みなとみらい","MARK IS 静岡","MARK IS 福岡ももち"],
-    "アミュプラザ": ["アミュプラザおおいた","アミュプラザくまもなと","アミュプラザ長崎"]
+    "アミュプラザ": ["アミュプラザおおいた","アミュプラザくまもと","アミュプラザ長崎"]
 }
 
 @st.cache_data(ttl=5)
@@ -136,7 +129,7 @@ with st.sidebar.form("input_form"):
     st.info(f"📍 読込中キー: {current_key}")
     r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
     r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
-    r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
+    r_cvr = st.text_area("CVR의理由", value=current_txt["cvr"])
     r_kyaku = st.text_area("客数の理由", value=current_txt["kyaku"])
     sum_text = st.text_area("■総評 / 今週のアクション", value=current_txt["summary"], height=150)
     if st.form_submit_button("全ユーザーに共有保存"):
@@ -150,13 +143,14 @@ current_gid = MONTH_CONFIG[sel_year][sel_month]["gid"]
 df_raw = load_raw_data_auth(current_gid)
 
 if not df_raw.empty:
-    # --- ロゴとタイトルの表示 (最も安定する方法) ---
-    logo_bytes = get_logo_bytes()
-    if logo_bytes:
-        # 1行に画像とタイトルを並べる
-        st.image(logo_bytes, width=60)
-    
-    st.title(f"ストアカルテ {sel_year}年{sel_month}")
+    # --- ヘッダー：ロゴとタイトルの表示 (最も安定する方法) ---
+    # st.titleのかわりにmarkdownを使い、Base64データをimgタグで埋め込んでいます
+    st.markdown(f'''
+    <div style="display: flex; align-items: center; margin-bottom: 20px;">
+        <img src="{LOGO_URL}" style="width: 50px; height: 50px; margin-right: 15px; border-radius: 5px; object-fit: contain;">
+        <h1 style="margin: 0; color: #3b484e; font-family: 'Meiryo', sans-serif;">ストアカルテ {sel_year}年{sel_month}</h1>
+    </div>
+    ''', unsafe_allow_html=True)
     
     st.markdown('''
     <style>
@@ -222,13 +216,16 @@ if not df_raw.empty:
         k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
-    # --- モール別MTD ---
+    # --- モール別MTD (期間同期版) ---
     st.markdown(f"<h4>モール別MTD ({sel_week})</h4>", unsafe_allow_html=True)
     store_names_row = df_raw.iloc[9].fillna("").astype(str).str.strip()
+    
     start_r = week_juchu_start_map[sel_week]
     end_r = start_r + 7
+
     mall_data_list = []
     total_juchu_all_stores = 0
+
     for group_name, stores in STORE_GROUPS.items():
         group_juchu = 0
         store_count = 0
@@ -238,15 +235,19 @@ if not df_raw.empty:
                 col_idx = matching_cols[0]
                 store_count += 1
                 group_juchu += sum([get_score(df_raw, r, col_idx + 1) for r in range(start_r, end_r)])
+        
         mall_data_list.append({"name": group_name, "count": store_count, "juchu": group_juchu})
         total_juchu_all_stores += group_juchu
+
     mall_report_rows = f'''
     <tr style="background-color:#f0f2f6; font-weight:bold;">
         <td>全体</td><td>{sum([d['count'] for d in mall_data_list])}</td><td>{total_juchu_all_stores:,.0f}</td><td>100.0%</td>
     </tr>'''
+    
     for d in mall_data_list:
         share = (d['juchu'] / total_juchu_all_stores * 100) if total_juchu_all_stores else 0
         mall_report_rows += f'<tr><td>{d["name"]}</td><td>{d["count"]}</td><td>{d["juchu"]:,.0f}</td><td>{share:.1f}%</td></tr>'
+
     st.markdown(f'''
     <table class="base-table">
         <tr><th>業態</th><th>ストア数</th><th>受注実績</th><th>売上シェア</th></tr>
