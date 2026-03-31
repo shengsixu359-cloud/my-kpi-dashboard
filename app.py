@@ -23,7 +23,9 @@ gc = get_gspread_client()
 SAVE_SHEET_ID = "1_8XbvigwRRIR-HxT5OEDlrKdpW8J9AjYYtjEk33LPIk"
 
 # --- 3. 引用元データ設定 ---
+# URL末尾のパラメータを除去し、純粋なエクスポート用URLを構成
 BASE_URL = "https://docs.google.com/spreadsheets/d/1KlZevjH2IbsV0kWQZxw1QjHy3EmsjG9vTKGtvVVTni8/export?format=csv&gid="
+
 MONTH_CONFIG = {
     "2026": {
         "3月": {"gid": "1502960872"},
@@ -46,8 +48,12 @@ STORE_GROUPS = {
 @st.cache_data(ttl=5)
 def load_raw_data(gid):
     try:
-        return pd.read_csv(f"{BASE_URL}{gid}", header=None)
-    except:
+        url = f"{BASE_URL}{gid}"
+        df = pd.read_csv(url, header=None)
+        return df
+    except Exception as e:
+        # 読み込めない場合に詳細なエラーをサイドバーに表示
+        st.sidebar.error(f"⚠️ 読み込みエラー詳細: {e}")
         return pd.DataFrame()
 
 def get_score(df, row, col):
@@ -112,7 +118,7 @@ with st.sidebar.form("input_form"):
     st.info(f"📍 読込中キー: {current_key}")
     r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
     r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
-    r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
+    r_cvr = st.text_area("CVR의理由", value=current_txt["cvr"])
     r_kyaku = st.text_area("客数の理由", value=current_txt["kyaku"])
     sum_text = st.text_area("■総評 / 今週のアクション", value=current_txt["summary"], height=150)
     if st.form_submit_button("全ユーザーに共有保存"):
@@ -192,66 +198,34 @@ if not df_raw.empty:
         k_rows += f'<tr><td>{m}</td><td>{k_n}</td><td>{t_s}</td><td>{fmt_v(av, av>=tv, u)}</td><td>{fmt_p(av/tv*100 if tv else 0, av>=tv)}</td><td>{fmt_p(av/lv*100 if lv else 0, av>=lv)}</td><td class="comment-cell">{reason}</td></tr>'
     st.markdown(f'<table class="base-table kpi-table"><tr><th>評</th><th>KPI</th><th>目標</th><th>実績</th><th>目標比</th><th>LY比</th><th>理由</th></tr>{k_rows}</table>', unsafe_allow_html=True)
 
-    # --- モール別MTD (新規追加セクション) ---
+    # --- モール別MTD ---
     st.markdown("<h4>モール別MTD</h4>", unsafe_allow_html=True)
-    
-    # 店舗名(10行目)と週(A列)のインデックス取得
-    store_names_row = df_raw.iloc[9] # 10行目
-    
+    store_names_row = df_raw.iloc[9]
     mall_report_rows = ""
     total_juchu_all_stores = 0
     mall_data_list = []
-
-    # 各グループの計算
     for group_name, stores in STORE_GROUPS.items():
         group_juchu = 0
         store_count = 0
         for store in stores:
-            # 店舗名に一致する列を探す
             matching_cols = [idx for idx, name in enumerate(store_names_row) if str(name).strip() == store]
             if matching_cols:
                 col_idx = matching_cols[0]
                 store_count += 1
-                # KW19～KW25 (行19～25) の合計
                 group_juchu += sum([get_score(df_raw, r, col_idx + 1) for r in range(19, 26)])
-        
         mall_data_list.append({"name": group_name, "count": store_count, "juchu": group_juchu})
         total_juchu_all_stores += group_juchu
-
-    # 「全体」の行を追加
     mall_report_rows += f'''
     <tr style="background-color:#f0f2f6; font-weight:bold;">
-        <td>全体</td>
-        <td>{sum([d['count'] for d in mall_data_list])}</td>
-        <td>{total_juchu_all_stores:,.0f}</td>
-        <td>100.0%</td>
+        <td>全体</td><td>{sum([d['count'] for d in mall_data_list])}</td><td>{total_juchu_all_stores:,.0f}</td><td>100.0%</td>
     </tr>'''
-
-    # 各業態の行を追加
     for d in mall_data_list:
         share = (d['juchu'] / total_juchu_all_stores * 100) if total_juchu_all_stores else 0
-        mall_report_rows += f'''
-        <tr>
-            <td>{d['name']}</td>
-            <td>{d['count']}</td>
-            <td>{d['juchu']:,.0f}</td>
-            <td>{share:.1f}%</td>
-        </tr>'''
-
-    st.markdown(f'''
-    <table class="base-table">
-        <tr>
-            <th>業態</th>
-            <th>ストア数</th>
-            <th>受注実績</th>
-            <th>売上シェア</th>
-        </tr>
-        {mall_report_rows}
-    </table>
-    ''', unsafe_allow_html=True)
+        mall_report_rows += f'<tr><td>{d["name"]}</td><td>{d["count"]}</td><td>{d["juchu"]:,.0f}</td><td>{share:.1f}%</td></tr>'
+    st.markdown(f'<table class="base-table"><tr><th>業態</th><th>ストア数</th><th>受注実績</th><th>売上シェア</th></tr>{mall_report_rows}</table>', unsafe_allow_html=True)
 
     # --- 総評 ---
     st.markdown("<h4>■総評 / 今週のアクション</h4>", unsafe_allow_html=True)
     st.markdown(f'<div class="summary-box">{str(current_txt["summary"])}</div>', unsafe_allow_html=True)
 else:
-    st.warning("数値データを読み込めませんでした。")
+    st.warning("数値データを読み込めませんでした。サイドバーのエラー詳細を確認してください。")
