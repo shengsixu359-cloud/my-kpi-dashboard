@@ -10,7 +10,6 @@ import requests
 st.set_page_config(page_title="ストアカルテ", layout="wide")
 
 # --- タイトル用ロゴ画像のURL ---
-# 確実な外部URL読み込み方式を継続
 LOGO_URL = "https://raw.githubusercontent.com/yone-lab/cart_log/main/j_logo.png"
 
 # --- 2. Googleスプレッドシート接続設定 ---
@@ -127,7 +126,7 @@ current_txt = fetch_sheet_text_live(current_key)
 with st.sidebar.form("input_form"):
     st.info(f"📍 読込中キー: {current_key}")
     r_zasu = st.text_area("座数の理由", value=current_txt["zasu"])
-    r_tanka = st.text_area("客単価の理由", value=current_txt["tanka"])
+    r_tanka = st.text_area("客単価의理由", value=current_txt["tanka"])
     r_cvr = st.text_area("CVRの理由", value=current_txt["cvr"])
     r_kyaku = st.text_area("客数の理由", value=current_txt["kyaku"])
     sum_text = st.text_area("■総評 / 今週のアクション", value=current_txt["summary"], height=150)
@@ -142,16 +141,17 @@ current_gid = MONTH_CONFIG[sel_year][sel_month]["gid"]
 df_raw = load_raw_data_auth(current_gid)
 
 if not df_raw.empty:
-    # --- ヘッダー：ロゴとタイトルを極限まで近づける修正 ---
-    # col_logoの幅をさらに狭く（1:20）設定
-    col_logo, col_title = st.columns([1, 20])
-    with col_logo:
-        st.image(LOGO_URL, width=50)
-    with col_title:
-        # margin-leftを負の値（-25px）にして、タイトルをロゴ側に引っ張る
-        st.markdown(f'<h1 style="margin-top: -5px; margin-left: -25px; color: #3b484e; font-family: \'Meiryo\', sans-serif;">ストアカルテ {sel_year}年{sel_month}</h1>', unsafe_allow_html=True)
+    # --- ヘッダー：一つのHTML要素としてロゴとタイトルを並べる ---
+    # カラムを使わないことで、間隔を自由にコントロールできます
+    st.markdown(f'''
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+        <img src="{LOGO_URL}" style="height: 50px; width: auto; border-radius: 4px; object-fit: contain;">
+        <h1 style="margin: 0; padding: 0; color: #3b484e; font-family: 'Meiryo', sans-serif; font-size: 2.2rem;">
+            ストアカルテ {sel_year}年{sel_month}
+        </h1>
+    </div>
+    ''', unsafe_allow_html=True)
     
-    # 既存のデザインCSS（変更なし）
     st.markdown('''
     <style>
         html, body, [class*="css"] { font-family: "Meiryo", sans-serif; color: #3b484e; }
@@ -167,7 +167,6 @@ if not df_raw.empty:
     </style>
     ''', unsafe_allow_html=True)
 
-    # 既存の集計・表示ロジック（完璧とのことなので変更なし）
     def fmt_v(val, cond, unit=""):
         cls = "reach" if cond else "unmet"
         t = f"{unit}{abs(val):,.0f}" if abs(val) >= 100 else f"{unit}{abs(val):.2f}"
